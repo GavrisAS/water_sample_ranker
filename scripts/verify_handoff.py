@@ -804,9 +804,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         verify(args.manifest, args.create_receipt)
     except HandoffError, OSError, ValueError, KeyError, TypeError:
-        print("FAIL: HANDOFF_INVALID (детали и секретные значения не выводятся)")
+        print("FAIL: HANDOFF_INVALID")
         return 2
-    print("PASS: целостность, privacy policy и fresh extraction; business correctness UNKNOWN")
+    print("PASS: ARCHIVE_INTEGRITY_PRIVACY_FRESH_EXTRACTION; BUSINESS_CORRECTNESS_UNKNOWN")
     return 0
 
 

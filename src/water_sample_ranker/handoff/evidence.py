@@ -115,6 +115,8 @@ def run_gate(
         QT_QPA_PLATFORM="offscreen",
         GIT_TERMINAL_PROMPT="0",
         UV_LINK_MODE="copy",
+        PYTHONUTF8="1",
+        PYTHONIOENCODING="utf-8",
     )
     with tempfile.TemporaryDirectory(prefix="wsr-gate-") as tmp:
         output = Path(tmp) / "output.txt"
@@ -268,11 +270,13 @@ def frozen_binding(root: Path) -> tuple[Path, dict[str, Any]] | None:
     from water_sample_ranker.build_provenance import build_inputs, content_digest
 
     try:
-        pointer = json.loads((root / "artifacts/private/frozen-current.json").read_text())
+        pointer = json.loads(
+            (root / "artifacts/private/frozen-current.json").read_text(encoding="utf-8")
+        )
         receipt_path = (root / pointer["receipt"]).resolve()
         if not receipt_path.is_relative_to((root / "artifacts/private").resolve()):
             return None
-        receipt = json.loads(receipt_path.read_text())
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         inputs = build_inputs(root)
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
         binary = (root / receipt["binary"]).resolve()

@@ -38,7 +38,7 @@ def test_batch_one_lha_read_fixed_snapshot_and_output_rows(synthetic, monkeypatc
     assert all(r.report["calculation_date"] == DAY.isoformat() for r in results)
     assert progress[-1].percent == 100
     assert all(p.percent < 100 for p in progress[:-1])
-    marker = json.loads((target / "bundle-complete.json").read_text())
+    marker = json.loads((target / "bundle-complete.json").read_text(encoding="utf-8"))
     assert marker["status"] == "COMPLETE" and len(marker["outputs"]) == 3
     for r in results:
         assert r.output

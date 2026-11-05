@@ -5,6 +5,7 @@
 .gitignore
 .python-version
 AGENTS.md
+Makefile
 README.md
 config.example.toml
 docs/ACCEPTANCE.md

@@ -299,8 +299,8 @@ def package(root: Path, version: str, commit: str, run_id: str, run_number: int)
         policy.scan_text(name, data)
     write_zip(destination / names[2], review)
     for name in (names[0], names[2]):
-        (destination / (name + ".sha256")).write_text(
-            f"{policy.sha((destination / name).read_bytes())}  {name}\n", encoding="ascii"
+        (destination / (name + ".sha256")).write_bytes(
+            f"{policy.sha((destination / name).read_bytes())}  {name}\n".encode("ascii")
         )
     verify_release_assets(
         destination,

@@ -64,7 +64,7 @@ def test_validate_does_not_write_and_update_is_independent_copy(synthetic: AppCo
     assert book.calculation.calcMode == "auto"
     assert book["Данные"].cell(7, headers["Последняя проба"]).number_format.startswith("dd.mm")
     book.close()
-    report = json.loads(result.output.with_suffix(".load-report.json").read_text())
+    report = json.loads(result.output.with_suffix(".load-report.json").read_text(encoding="utf-8"))
     assert report["output"]["sha256"] == fingerprint(result.output)["sha256"]
     assert report["selected_field"] == "береговое"
     assert report["rows_written"] == 105

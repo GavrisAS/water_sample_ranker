@@ -34,7 +34,7 @@ def test_three_component_source_runtime_and_numeric_patch():
     assert parse_release_tag("v0.1.10") == (0, 1, 10)
     assert parse_release_tag(tag(10)) > parse_release_tag(tag(9))
     assert (
-        tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+        tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
         == SOURCE_VERSION
         == __version__
         == "0.1.1"
@@ -144,8 +144,8 @@ def synthetic_assets(directory):
         {"BUILD_EVIDENCE.json": policy.canonical(evidence), "README.txt": b"SYNTHETIC ONLY\n"},
     )
     for n in (names[0], names[2]):
-        (directory / (n + ".sha256")).write_text(
-            f"{policy.sha((directory / n).read_bytes())}  {n}\n"
+        (directory / (n + ".sha256")).write_bytes(
+            f"{policy.sha((directory / n).read_bytes())}  {n}\n".encode("ascii")
         )
     return directory
 

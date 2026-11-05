@@ -30,6 +30,13 @@ CLI использует тот же service: `uv run water-sample-ranker --help
 `uv run ruff format --check .`, `uv run ty check`, `uv run pytest`.
 Публичные проверки обходятся без производственных файлов.
 
+Команды разработчика по образцу ГДИС собраны в [Makefile](Makefile):
+`make sync`, `make check`, `make run`, `make cli`, `make version`, `make demo`,
+`make build` / `make build-windows`. `make help` перечисляет параметры.
+`make privacy`, `make public-check` и `make audit` выполняются из очищенной
+публичной копии; исходная локальная история с приватными документами их не проходит.
+`make clean` удаляет только кэши проверок.
+
 [Релизный процесс](docs/RELEASE_PROCESS.md) использует серию `v0.1.PATCH`,
 начиная с `v0.1.1`; версия исходников согласована как `0.1.1` вместо прежней
 developer-метки `0.2.0`. При сборке release metadata меняется только в isolated

@@ -44,7 +44,9 @@ def main() -> None:
         shutil.copyfile(root / name, target)
     generated = source / "src/water_sample_ranker/_build_version.py"
     generated.write_text(
-        f'RELEASE_VERSION = "{args.version}"\nSOURCE_COMMIT = "{commit}"\n', encoding="utf-8"
+        f'RELEASE_VERSION = "{args.version}"\nSOURCE_COMMIT = "{commit}"\n',
+        encoding="utf-8",
+        newline="\n",
     )
     for name in ("pyproject.toml", "uv.lock"):
         path = source / name
@@ -64,12 +66,13 @@ def main() -> None:
             )
         if count != 1:
             raise ValueError("ISOLATED_VERSION_METADATA_MISMATCH")
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
     metadata = source / f"water_sample_ranker-{args.version}.dist-info"
     metadata.mkdir()
     (metadata / "METADATA").write_text(
         f"Metadata-Version: 2.3\nName: water-sample-ranker\nVersion: {args.version}\n",
         encoding="utf-8",
+        newline="\n",
     )
     manifest = {
         "schema": 1,

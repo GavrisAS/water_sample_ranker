@@ -1,5 +1,12 @@
 # Stage B.1 — technical preview
 
+Первый push зарезервировал v0.1.1; его Windows gates выявили locale/newline и
+переносимость путей/тестов. Номер остаётся пропущенным, не передаётся другому
+commit и не выдаётся за опубликованный релиз. Следующий eligible push — v0.1.2.
+Исправлены явное UTF-8 чтение, канонические LF metadata/checksums, ASCII protocol
+автономного verifier и наблюдаемое изменение mtime на NTFS. Добавлен Makefile
+по образцу исходного проекта; `version` не увеличивает release counter.
+
 TECHNICAL PREVIEW — НЕ УТВЕРЖДЁННЫЙ РЕЙТИНГ.
 
 Исправлены две технические ошибки: частичные даты ГТМ сравниваются с cutoff по

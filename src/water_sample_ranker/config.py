@@ -103,10 +103,12 @@ def discover(root: Path) -> tuple[dict[str, str], dict[str, list[str]]]:
                     autonomous.append(p)
         if len(autonomous) == 1:
             candidates["monitoring"] = autonomous
-    paths = {r: str(ps[0].relative_to(root)) for r, ps in candidates.items() if len(ps) == 1}
-    paths["calculator"] = str(TEMPLATE)
+    paths = {r: ps[0].relative_to(root).as_posix() for r, ps in candidates.items() if len(ps) == 1}
+    paths["calculator"] = TEMPLATE.as_posix()
     return paths, {
-        r: [str(p.relative_to(root)) for p in ps] for r, ps in candidates.items() if len(ps) > 1
+        r: [p.relative_to(root).as_posix() for p in ps]
+        for r, ps in candidates.items()
+        if len(ps) > 1
     }
 
 

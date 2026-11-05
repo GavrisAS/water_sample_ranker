@@ -27,7 +27,9 @@ def test_processes_race_without_clobber(tmp_path):
     for worker in workers:
         worker.join(30)
         assert worker.exitcode == 0
-    assert json.loads((tmp_path / "bundle-complete.json").read_text())["winner"] in {
+    assert json.loads((tmp_path / "bundle-complete.json").read_text(encoding="utf-8"))[
+        "winner"
+    ] in {
         "0",
         "1",
         "2",
@@ -74,7 +76,7 @@ def test_atomic_faults_leave_no_marker_or_owned_temporary(tmp_path, monkeypatch,
 
         def linked_then_failed(source, target):
             original_link(source, target)
-            assert json.loads(marker.read_text()) == {"complete": True}
+            assert json.loads(marker.read_text(encoding="utf-8")) == {"complete": True}
             raise OSError("SYNTHETIC_AFTER_LINK")
 
         monkeypatch.setattr(bundle.os, "link", linked_then_failed)
@@ -116,11 +118,13 @@ def test_complete_requires_valid_bound_json_and_every_payload(synthetic, fault):
     assert bundle.verify_bundle(directory)["status"] == "COMPLETE"
     assert bundle.verify_bundle(directory, expected_date="2020-01-01")["status"] == "INCOMPLETE"
     marker = directory / "bundle-complete.json"
-    raw = json.loads(marker.read_text())
+    raw = json.loads(marker.read_text(encoding="utf-8"))
     if fault == "truncated":
         marker.write_text('{"status":"COMPLETE",')
     elif fault == "duplicate":
-        marker.write_text(marker.read_text().replace('"schema": 1', '"schema": 1, "schema": 1'))
+        marker.write_text(
+            marker.read_text(encoding="utf-8").replace('"schema": 1', '"schema": 1, "schema": 1')
+        )
     elif fault == "checksum":
         results[0].output.write_bytes(b"BROKEN_XLSX")
     elif fault == "missing":

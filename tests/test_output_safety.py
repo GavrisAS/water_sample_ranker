@@ -41,7 +41,9 @@ def test_source_change_counter_blocks_acceptance(synthetic, monkeypatch):
     def touch_after_read(path):
         result = original(path)
         before = path.stat()
-        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1))
+        # NTFS timestamps have 100 ns granularity; 1 ns can round back unchanged.
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000))
+        assert path.stat().st_mtime_ns != before.st_mtime_ns
         return result
 
     monkeypatch.setattr(service, "read_lha", touch_after_read)

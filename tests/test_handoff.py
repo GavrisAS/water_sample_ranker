@@ -310,7 +310,7 @@ def test_toctou_source_change_blocks_before_publication(
     def mutate(*args, **kwargs):
         result = original(*args, **kwargs)
         p = source / "README.md"
-        p.write_text(p.read_text() + "\nchanged\n")
+        p.write_text(p.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
         return result
 
     monkeypatch.setattr(evidence, "checks", mutate)
@@ -401,6 +401,22 @@ def test_scanned_template_roundtrip_is_available_for_independent_review(source, 
     with tarfile.open(manifest.parent / m["artifacts"]["audit"]["path"]) as a:
         stream = a.extractfile("audit/" + name)
         assert stream is not None and stream.read() == target.read_bytes()
+
+
+def test_independent_verifier_works_with_legacy_windows_stdout(bundle):
+    command = [
+        sys.executable,
+        "-I",
+        "-B",
+        "-c",
+        "import sys, runpy; sys.stdout.reconfigure(encoding='cp1252'); "
+        "script = sys.argv.pop(1); runpy.run_path(script, run_name='__main__')",
+        str(PROJECT / "scripts/verify_handoff.py"),
+        str(bundle),
+    ]
+    result = subprocess.run(command, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+    assert result.stdout.decode("ascii").startswith("PASS:")
 
 
 @pytest.mark.parametrize("prefix", ["", "+", "-"])
