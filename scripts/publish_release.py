@@ -17,7 +17,9 @@ from water_sample_ranker.versioning import reserved_tag
 def gh(*args: str, missing: bool = False) -> Any:
     result = subprocess.run(["gh", *args], capture_output=True)
     if result.returncode:
-        if missing and b"HTTP 404" in result.stderr:
+        if missing and (
+            b"HTTP 404" in result.stderr or result.stderr.strip().lower() == b"release not found"
+        ):
             return None
         raise ValueError("GITHUB_COMMAND_FAILED")
     if not result.stdout.strip():
@@ -50,9 +52,27 @@ def verify_existing(
     run_id: str,
     run_number: int,
 ) -> dict[str, Any] | None:
-    release = gh("api", f"repos/{repo}/releases/tags/{tag}", missing=True)
-    if release is None:
+    # REST /releases/tags excludes this draft before publication. The gh view
+    # query resolves drafts by tag as well, including its temporary untagged URL.
+    view = gh(
+        "release",
+        "view",
+        tag,
+        "--repo",
+        repo,
+        "--json",
+        "tagName,isDraft,isPrerelease,assets,url",
+        missing=True,
+    )
+    if view is None:
         return None
+    release = {
+        "tag_name": view["tagName"],
+        "draft": view["isDraft"],
+        "prerelease": view["isPrerelease"],
+        "assets": view["assets"],
+        "html_url": view["url"],
+    }
     expected = set(asset_names(tag[1:]))
     if (
         release.get("tag_name") != tag

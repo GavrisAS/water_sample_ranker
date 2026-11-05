@@ -198,13 +198,17 @@ def test_rerun_candidate_is_same_run_and_latest_available_attempt():
 
 
 @pytest.mark.parametrize("conflict", [False, True])
-def test_existing_release_verifies_or_fails_without_mutation(tmp_path, monkeypatch, conflict):
+@pytest.mark.parametrize("draft", [False, True])
+def test_existing_release_verifies_or_fails_without_mutation(
+    tmp_path, monkeypatch, conflict, draft
+):
     directory = synthetic_assets(tmp_path / "assets")
     calls = []
     release = {
         "tag_name": "v0.1.1",
         "prerelease": True,
-        "draft": False,
+        "draft": draft,
+        "html_url": "https://github.com/DEMO/repo/releases/tag/v0.1.1",
         "assets": [{"name": n} for n in assets.asset_names("0.1.1")],
     }
 
@@ -215,8 +219,14 @@ def test_existing_release_verifies_or_fails_without_mutation(tmp_path, monkeypat
             for file in directory.iterdir():
                 shutil.copyfile(file, dest / file.name)
             return None
-        if "/releases/tags/" in args[1]:
-            return release
+        if args[:2] == ("release", "view"):
+            return {
+                "tagName": release["tag_name"],
+                "isDraft": release["draft"],
+                "isPrerelease": release["prerelease"],
+                "assets": release["assets"],
+                "url": release["html_url"],
+            }
         return {
             "object": {
                 "sha": "d" * 40 if conflict else COMMIT,
@@ -232,7 +242,24 @@ def test_existing_release_verifies_or_fails_without_mutation(tmp_path, monkeypat
             publisher.verify_existing(ROOT, "DEMO/repo", "v0.1.1", COMMIT, "100", 1)
     else:
         assert publisher.verify_existing(ROOT, "DEMO/repo", "v0.1.1", COMMIT, "100", 1) == release
-    assert all(args[0] == "api" or args[:2] == ("release", "download") for args in calls)
+    assert all(
+        args[0] == "api" or args[:2] in {("release", "download"), ("release", "view")}
+        for args in calls
+    )
+
+
+@pytest.mark.parametrize("stderr,missing", [(b"release not found\n", True), (b"HTTP 500", False)])
+def test_draft_query_missing_is_distinct_from_api_failure(monkeypatch, stderr, missing):
+    import subprocess
+
+    monkeypatch.setattr(
+        publisher.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 1, b"", stderr)
+    )
+    if missing:
+        assert publisher.gh("release", "view", "v0.1.1", missing=True) is None
+    else:
+        with pytest.raises(ValueError, match="GITHUB_COMMAND_FAILED"):
+            publisher.gh("release", "view", "v0.1.1", missing=True)
 
 
 def test_remote_job_failure_blocks_publication():
