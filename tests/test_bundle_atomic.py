@@ -109,7 +109,18 @@ def test_cleanup_preserves_replaced_user_object(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "fault", ["truncated", "duplicate", "checksum", "missing", "binding", "names", "count"]
+    "fault",
+    [
+        "truncated",
+        "duplicate",
+        "checksum",
+        "missing",
+        "binding",
+        "names",
+        "count",
+        "schema_bool",
+        "invalid_version",
+    ],
 )
 def test_complete_requires_valid_bound_json_and_every_payload(synthetic, fault):
     directory = synthetic.root / "bundle"
@@ -134,6 +145,10 @@ def test_complete_requires_valid_bound_json_and_every_payload(synthetic, fault):
             raw["version"] = "0.1.999"
         elif fault == "names":
             raw["outputs"][0]["workbook"]["name"] = "../foreign.xlsx"
+        elif fault == "schema_bool":
+            raw["schema"] = True
+        elif fault == "invalid_version":
+            raw["version"] = "UNVERSIONED"
         else:
             raw["outputs"].pop()
         marker.write_text(json.dumps(raw))

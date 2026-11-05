@@ -14,6 +14,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from water_sample_ranker.versioning import parse_version
+
 
 class BundleError(ValueError):
     pass
@@ -143,6 +145,7 @@ def verify_bundle(
         if (
             set(marker)
             != {"schema", "status", "calculation_date", "version", "source_manifest", "outputs"}
+            or type(marker["schema"]) is not int
             or marker["schema"] != 1
             or marker["status"] != "COMPLETE"
         ):
@@ -150,6 +153,7 @@ def verify_bundle(
         date.fromisoformat(marker["calculation_date"])
         if not isinstance(marker["version"], str) or not marker["version"]:
             raise BundleError("BUNDLE_VERSION")
+        parse_version(marker["version"])
         sources = marker["source_manifest"]
         if not isinstance(sources, dict) or not sources:
             raise BundleError("BUNDLE_SOURCES")
