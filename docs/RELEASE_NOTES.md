@@ -13,6 +13,12 @@ v0.1.2 прошёл Linux/Windows checks, fresh Windows build и frozen GUI/vers
 и проверку фактического вывода CLI --version. Подробные smoke logs не включаются
 в release assets; в Actions допустима только обезличенная синтетическая диагностика.
 
+Windows candidate с --cli-log прошёл frozen GUI/CLI. Privacy scan выявил маркеры
+PEM-парсера в трёх стандартных Qt DLL. Они независимо сверены с публичным
+PySide6 wheel из lockfile; исключение ограничено точными reviewed SHA-256.
+Неизвестные бинарники с такими маркерами по-прежнему блокируются.
+В onedir добавлены upstream license notices/texts; лицензия приложения не меняется.
+
 TECHNICAL PREVIEW — НЕ УТВЕРЖДЁННЫЙ РЕЙТИНГ.
 
 Исправлены две технические ошибки: частичные даты ГТМ сравниваются с cutoff по

@@ -1,0 +1,36 @@
+{
+  "binaries": [
+    {
+      "bytes": 1780536,
+      "file": "PySide6/Qt6Network.dll",
+      "full_pem_key_blocks": 0,
+      "full_pem_key_blocks_utf16be": 0,
+      "full_pem_key_blocks_utf16le": 0,
+      "sha256": "1c7c393b264ae78f4dee211656377a086c4be714bf768d3135f94f11c1d0be61"
+    },
+    {
+      "bytes": 317752,
+      "file": "PySide6/plugins/tls/qopensslbackend.dll",
+      "full_pem_key_blocks": 0,
+      "full_pem_key_blocks_utf16be": 0,
+      "full_pem_key_blocks_utf16le": 0,
+      "sha256": "94b3492bc4087da2818e2749a5a03f7d810611b2e3648bd8d580ad087363046f"
+    },
+    {
+      "bytes": 249144,
+      "file": "PySide6/plugins/tls/qschannelbackend.dll",
+      "full_pem_key_blocks": 0,
+      "full_pem_key_blocks_utf16be": 0,
+      "full_pem_key_blocks_utf16le": 0,
+      "sha256": "2915a86a2531e65fd4905f0cc1c8dc353772a4f52aeda5100725dd9249db54d1"
+    }
+  ],
+  "reviewed_content_exception": "EXACT_UPSTREAM_SHA256_ONLY",
+  "scope": "PUBLIC_UPSTREAM_QT_PARSER_LITERALS_ONLY",
+  "wheel": {
+    "hash": "sha256:c9a95102aa23c1f86516a30d5a9be37552d324eee7e567eb7508973f1218cb42",
+    "size": 82153795,
+    "upload-time": "2026-10-08T09:10:15.104Z",
+    "url": "https://files.pythonhosted.org/packages/03/61/9a7e32a37b224f68506785bfb0f288d516098ec71681782d72b695a6c95d/pyside6_essentials-6.12.0-cp310-abi3-win_amd64.whl"
+  }
+}

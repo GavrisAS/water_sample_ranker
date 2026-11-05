@@ -98,6 +98,9 @@ def synthetic_assets(directory):
         "_internal/water_sample_ranker-0.1.1.dist-info/METADATA": (
             b"Name: water-sample-ranker\nVersion: 0.1.1\n"
         ),
+        assets.NOTICE: (ROOT / "docs/THIRD_PARTY_NOTICES.txt").read_bytes(),
+        "third-party-licenses.json": (ROOT / "docs/THIRD_PARTY_LICENSES.json").read_bytes(),
+        **{"licenses/" + Path(n).name: (ROOT / n).read_bytes() for n in policy.PUBLIC_LICENSES},
     }
     inventory = {n: {"sha256": policy.sha(d), "bytes": len(d)} for n, d in files.items()}
     files["bundle-inventory.json"] = policy.canonical(inventory)

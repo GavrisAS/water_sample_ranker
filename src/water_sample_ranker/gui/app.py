@@ -241,7 +241,9 @@ class LoaderWindow(QMainWindow):
                 self,
                 "О программе",
                 f"Water Sample Ranker {__version__}\n{PREVIEW_NOTICE}\n"
-                "Баллы, ранги и TOP не рассчитываются. Native Excel и ручная Windows UX: NOT_RUN.",
+                "Баллы, ранги и TOP не рассчитываются. Native Excel и ручная Windows UX: NOT_RUN.\n"
+                "Qt/PySide6 и Shiboken6: LGPLv3; Python и другие компоненты: "
+                "см. THIRD_PARTY_NOTICES.txt и licenses/ рядом с EXE.",
             )
         )
         central = QWidget(self)

@@ -127,3 +127,35 @@ def test_unexpected_tracked_file_cannot_bypass_gitignore(repository):
     command(repository, "commit", "-m", "SYNTHETIC EXTRA")
     with pytest.raises(policy.HandoffError, match="ALLOWLIST"):
         gate.scan_tree(repository)
+
+
+@pytest.mark.parametrize("encoding", ["ascii", "utf-16le"])
+def test_unknown_binary_markers_still_fail_closed(encoding):
+    from scripts.release_assets import binary_privacy
+
+    for text in ("SENSITIVE_" + "PRODUCTION_SENTINEL", "-----BEGIN " + "PRIVATE KEY-----"):
+        with pytest.raises(policy.HandoffError):
+            binary_privacy(text.encode(encoding))
+
+
+def test_public_license_hash_exception_rejects_any_added_operator_content():
+    name = next(iter(policy.PUBLIC_LICENSES))
+    raw = (ROOT / name).read_bytes()
+    policy.scan_member(name, raw)
+    with pytest.raises(policy.HandoffError, match="UNREVIEWED_LICENSE_BYTES"):
+        policy.scan_member(name, raw + b"\nSYNTHETIC PRIVATE ADDITION")
+
+
+def test_untracked_python_cannot_enter_isolated_build_context(tmp_path):
+    import shutil
+
+    from water_sample_ranker.build_provenance import build_inputs
+
+    approved = build_inputs(ROOT)
+    for name in approved:
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, target)
+    leak = tmp_path / "src/water_sample_ranker/untracked_private.py"
+    leak.write_text("SENSITIVE_" + "PRODUCTION_SENTINEL", encoding="utf-8")
+    assert build_inputs(tmp_path) == approved

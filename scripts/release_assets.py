@@ -21,6 +21,15 @@ from water_sample_ranker.versioning import parse_version
 
 APP = "Water_Sample_Ranker"
 README = "README_ПЕРВЫЙ_ЗАПУСК.txt"
+NOTICE = "THIRD_PARTY_NOTICES.txt"
+# Reviewed immutable Qt parser literals from the pinned public PySide6 6.12.0
+# Windows wheel (SHA c9a95102aa23c1f86516a30d5a9be37552d324eee7e567eb7508973f1218cb42).
+# No key blocks in ASCII/UTF-16. Unknown binaries still fail on the same marker.
+PUBLIC_QT_PARSER_BINARIES = {
+    "1c7c393b264ae78f4dee211656377a086c4be714bf768d3135f94f11c1d0be61",  # Qt6Network
+    "94b3492bc4087da2818e2749a5a03f7d810611b2e3648bd8d580ad087363046f",  # OpenSSL backend
+    "2915a86a2531e65fd4905f0cc1c8dc353772a4f52aeda5100725dd9249db54d1",  # Schannel backend
+}
 
 
 def asset_names(version: str) -> tuple[str, str, str, str]:
@@ -40,9 +49,14 @@ def write_zip(path: Path, files: dict[str, bytes]) -> None:
 
 
 def binary_privacy(data: bytes) -> None:
-    for marker in (b"SENSITIVE_" + b"PRODUCTION_SENTINEL", b"-----BEGIN " + b"PRIVATE KEY-----"):
-        if marker in data or marker.decode().encode("utf-16le") in data:
-            raise policy.HandoffError("PUBLIC_BINARY_CONTENT")
+    marker = b"SENSITIVE_" + b"PRODUCTION_SENTINEL"
+    if marker in data or marker.decode().encode("utf-16le") in data:
+        raise policy.HandoffError("PUBLIC_BINARY_CONTENT")
+    pem = b"-----BEGIN " + b"PRIVATE KEY-----"
+    if (pem in data or pem.decode().encode("utf-16le") in data) and policy.sha(
+        data
+    ) not in PUBLIC_QT_PARSER_BINARIES:
+        raise policy.HandoffError("PUBLIC_BINARY_UNREVIEWED_PEM_MARKER")
     if re.search(rb"(?:gh[pous]_|github_pat_)[A-Za-z0-9_]{25,}", data):
         raise policy.HandoffError("PUBLIC_BINARY_TOKEN")
 
@@ -70,13 +84,18 @@ def check_onedir(files: dict[str, bytes], version: str, commit: str) -> dict[str
         README,
         "build-manifest.json",
         "bundle-inventory.json",
+        NOTICE,
+        "third-party-licenses.json",
+        *("licenses/" + Path(n).name for n in policy.PUBLIC_LICENSES),
     }
     if not top <= relative.keys():
         raise ValueError("ONEDIR_REQUIRED_RESOURCES")
     for name, data in relative.items():
         privacy.check_name(name)
         if name in top:
-            if name.endswith(".xlsx"):
+            if name.startswith("licenses/"):
+                policy.scan_member("docs/" + name, data)
+            elif name.endswith(".xlsx"):
                 privacy.check_template(data)
             elif name.endswith(".exe"):
                 check_pe_x64(data)
@@ -109,7 +128,10 @@ def check_onedir(files: dict[str, bytes], version: str, commit: str) -> dict[str
             continue
         if Path(tail).suffix.casefold() not in {".dll", ".pyd", ".qm"}:
             raise ValueError("ONEDIR_UNREVIEWED_RESOURCE")
-        binary_privacy(data)
+        try:
+            binary_privacy(data)
+        except policy.HandoffError as error:
+            raise policy.HandoffError(f"{error}:{name}:sha256={policy.sha(data)}") from error
     if not any(n.startswith("_internal/") and n.endswith(".dll") for n in relative):
         raise ValueError("ONEDIR_INTERNAL_MISSING")
     manifest = json.loads(relative["build-manifest.json"])

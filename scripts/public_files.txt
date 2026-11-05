@@ -18,6 +18,7 @@ docs/EXCEL_STRUCTURE.json
 docs/EXCEL_TEMPLATE_AUDIT.md
 docs/OPEN_QUESTIONS.md
 docs/OPTIONAL_INPUTS.md
+docs/PUBLIC_BINARY_REVIEW.json
 docs/README_ПЕРВЫЙ_ЗАПУСК.txt
 docs/RELEASE_NOTES.md
 docs/RELEASE_PROCESS.md
@@ -27,8 +28,17 @@ docs/STAGE_A1_REPORT.md
 docs/STAGE_B1_REPORT.md
 docs/STAGE_B_BASELINE.md
 docs/STAGE_B_REPORT.md
+docs/THIRD_PARTY_LICENSES.json
+docs/THIRD_PARTY_NOTICES.txt
 docs/UX_PARITY_GDIS.md
 docs/WINDOWS_EXCEL_ACCEPTANCE.md
+docs/licenses/PyInstaller.txt
+docs/licenses/Python.txt
+docs/licenses/Qt-GPL-3.0.txt
+docs/licenses/Qt-LGPL-3.0.txt
+docs/licenses/et-xmlfile.txt
+docs/licenses/openpyxl.txt
+docs/licenses/tomli-w.txt
 pyproject.toml
 scripts/audit_delivery.py
 scripts/build_frozen.py

@@ -181,7 +181,7 @@ def snapshot(
             data, transforms = raw, []
         else:
             data, transforms = projection(raw)
-            policy.scan_text(name, data)
+            policy.scan_member(name, data)
         payloads["audit/" + name] = data
         entries[name] = {
             "original_sha256": before["sha256"],

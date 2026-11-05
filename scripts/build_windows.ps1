@@ -4,6 +4,8 @@ param(
     [switch]$PublicRelease
 )
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 function Check-Exit([string]$Step) {

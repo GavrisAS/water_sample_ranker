@@ -1,0 +1,33 @@
+Third-party components in the standalone preview
+
+The application uses unmodified dynamically loaded Qt, PySide6-Essentials and
+Shiboken6 6.12.0 libraries under the LGPL version 3 option. Copyright notices and
+the LGPLv3/GPLv3 texts are in licenses/. This notice applies to these libraries;
+it does not assign a license to the application's own code or Excel template.
+
+Qt sources: https://code.qt.io/cgit/qt/qtbase.git/?h=v6.12.0
+Python bindings and Shiboken sources:
+https://code.qt.io/cgit/pyside/pyside-setup.git/?h=v6.12.0
+Qt license overview: https://doc.qt.io/qt-6/licensing.html
+
+The onedir uses shared DLLs in _internal/. To use a compatible modified library,
+keep an original backup outside this folder, replace the relevant DLLs/bindings
+with ABI-compatible builds for the same Windows x64 / Python 3.14 / Qt version,
+and start the application again. Rebuild instructions for a complete new bundle
+are scripts/build_windows.ps1 in the public source repository. No runtime gate
+prevents library replacement. Reverse engineering needed to debug modifications
+to these LGPL libraries is permitted. Release checksums describe the original
+distributed files; changed libraries naturally have different hashes.
+
+CPython 3.14: Python Software Foundation license, see licenses/Python.txt.
+Source: https://github.com/python/cpython/tree/v3.14.8
+PyInstaller bootloader: GPLv2 with the distribution exception in
+licenses/PyInstaller.txt. Source: https://github.com/pyinstaller/pyinstaller/tree/v6.22.3
+openpyxl 3.1.5, et-xmlfile 2.0.0, tomli-w 1.2.0: MIT license texts and
+copyright notices in licenses/. The corresponding public wheel URLs and
+license member hashes are recorded in third-party-licenses.json.
+
+Only license line endings were normalized to LF. These are public upstream
+copyright/license materials; no customer contacts, questionnaires or input
+data are included. The application owner's distribution authorization is
+documented separately; no new project-wide license is invented here.

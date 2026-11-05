@@ -25,6 +25,20 @@ MAX_FILE = 8 * 1024**2
 MAX_TOTAL = 64 * 1024**2
 MAX_ARCHIVE = 32 * 1024**2
 STATUSES = {"PASS", "FAIL", "NOT_RUN", "PARTIAL", "BLOCKED", "UNKNOWN"}
+# Public upstream copyright/license texts, independently downloaded and hashed.
+# Exact bytes only: this exception cannot admit operator contacts or private data.
+PUBLIC_LICENSES = {
+    "docs/licenses/" + name: digest
+    for name, digest in (
+        ("PyInstaller.txt", "0598064c7d2718e38d7914a7d08343b2fa008e3bea9ebba2aa7a6ffa5900dd64"),
+        ("Python.txt", "b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231"),
+        ("Qt-GPL-3.0.txt", "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"),
+        ("Qt-LGPL-3.0.txt", "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"),
+        ("et-xmlfile.txt", "4ccdaaebc0f44b83720ec0399bb7ab329adce067dd62f73c5535a2dc05628ab2"),
+        ("openpyxl.txt", "0c84bb42f5d367e5ebf9fc2dde35b16141df5ee0fdc189250858bc6c5560f69e"),
+        ("tomli-w.txt", "b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe"),
+    )
+}
 DOCUMENTS = {
     "ARCHITECTURE.md",
     "ACCEPTANCE.md",
@@ -43,6 +57,9 @@ DOCUMENTS = {
     "RELEASE_PROCESS.md",
     "RELEASE_NOTES.md",
     "STAGE_B1_REPORT.md",
+    "THIRD_PARTY_NOTICES.txt",
+    "THIRD_PARTY_LICENSES.json",
+    "PUBLIC_BINARY_REVIEW.json",
 }
 ROOT_FILES = {
     "README.md",
@@ -223,6 +240,7 @@ def allowed_source(name: str, binary: bool = False) -> bool:
         or (name.startswith("scripts/") and p.suffix in {".py", ".ps1"})
         or name == "scripts/public_files.txt"
         or name == "docs/README_ПЕРВЫЙ_ЗАПУСК.txt"
+        or name in PUBLIC_LICENSES
         or (name.startswith(".github/workflows/") and p.suffix in {".yml", ".yaml"})
         or (len(p.parts) == 2 and p.parts[0] == "docs" and p.name in DOCUMENTS)
         or (binary and name == "templates/Water_Sample_Ranking_Calculator.xlsx")
@@ -483,6 +501,11 @@ def scan_xlsx(data: bytes) -> None:
 
 
 def scan_member(name: str, data: bytes) -> None:
+    source_name = name.removeprefix("audit/")
+    if source_name in PUBLIC_LICENSES:
+        if sha(data) != PUBLIC_LICENSES[source_name]:
+            raise HandoffError("UNREVIEWED_LICENSE_BYTES")
+        return
     if name.endswith(".xlsx"):
         scan_xlsx(data)
     else:

@@ -97,6 +97,9 @@ def check_source(name: str, data: bytes, names: set[str]) -> None:
     if name == TEMPLATE:
         check_template(data)
         return
+    if name in policy.PUBLIC_LICENSES:
+        policy.scan_member(name, data)
+        return
     if len(data) > 8 * 1024**2:
         raise policy.HandoffError("PUBLIC_FILE_SIZE")
     policy.scan_text(name, data)

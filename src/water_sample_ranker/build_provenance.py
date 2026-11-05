@@ -6,9 +6,9 @@ from pathlib import Path
 
 
 def build_inputs(root: Path) -> dict[str, str]:
-    names = {
-        p.relative_to(root).as_posix() for p in (root / "src/water_sample_ranker").rglob("*.py")
-    }
+    approved = (root / "scripts/public_files.txt").read_text(encoding="utf-8").splitlines()
+    names = {n for n in approved if n.startswith("src/water_sample_ranker/") and n.endswith(".py")}
+    names.update(n for n in approved if n.startswith("docs/licenses/"))
     names.update(
         {
             "pyproject.toml",
@@ -18,6 +18,9 @@ def build_inputs(root: Path) -> dict[str, str]:
             "scripts/build_windows.ps1",
             "templates/Water_Sample_Ranking_Calculator.xlsx",
             "docs/README_ПЕРВЫЙ_ЗАПУСК.txt",
+            "docs/THIRD_PARTY_NOTICES.txt",
+            "docs/THIRD_PARTY_LICENSES.json",
+            "scripts/public_files.txt",
         }
     )
     return {n: hashlib.sha256((root / n).read_bytes()).hexdigest() for n in sorted(names)}

@@ -98,6 +98,7 @@ def main() -> None:
         "--clean",
         "--noconfirm",
         "--onedir",
+        "--noupx",
         "--windowed",
         "--name",
         "Water_Sample_Ranker",
@@ -125,6 +126,11 @@ def main() -> None:
         shutil.copyfile(source / name, bundle / name)
     shutil.copyfile(source / "docs/README_ПЕРВЫЙ_ЗАПУСК.txt", bundle / "README_ПЕРВЫЙ_ЗАПУСК.txt")
     shutil.copyfile(manifest_path, bundle / "build-manifest.json")
+    (bundle / "licenses").mkdir()
+    for path in (source / "docs/licenses").glob("*.txt"):
+        shutil.copyfile(path, bundle / "licenses" / path.name)
+    shutil.copyfile(source / "docs/THIRD_PARTY_NOTICES.txt", bundle / "THIRD_PARTY_NOTICES.txt")
+    shutil.copyfile(source / "docs/THIRD_PARTY_LICENSES.json", bundle / "third-party-licenses.json")
     binary = bundle / ("Water_Sample_Ranker.exe" if os.name == "nt" else "Water_Sample_Ranker")
     smoke_receipt = run / "frozen-smoke.json"
     with (run / "smoke.log").open("xb") as stream:

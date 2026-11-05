@@ -1,0 +1,44 @@
+{
+  "docs/licenses/PyInstaller.txt": {
+    "normalization": "LF_LINE_ENDINGS_ONLY",
+    "sha256": "0598064c7d2718e38d7914a7d08343b2fa008e3bea9ebba2aa7a6ffa5900dd64",
+    "upstream": "https://raw.githubusercontent.com/pyinstaller/pyinstaller/v6.22.3/COPYING.txt",
+    "upstream_sha256": "0598064c7d2718e38d7914a7d08343b2fa008e3bea9ebba2aa7a6ffa5900dd64"
+  },
+  "docs/licenses/Python.txt": {
+    "normalization": "LF_LINE_ENDINGS_ONLY",
+    "sha256": "b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231",
+    "upstream": "https://raw.githubusercontent.com/python/cpython/v3.14.8/LICENSE",
+    "upstream_sha256": "b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231"
+  },
+  "docs/licenses/Qt-GPL-3.0.txt": {
+    "normalization": "LF_LINE_ENDINGS_ONLY",
+    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+    "upstream": "https://raw.githubusercontent.com/qt/qtbase/v6.12.0/LICENSES/GPL-3.0-only.txt",
+    "upstream_sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  "docs/licenses/Qt-LGPL-3.0.txt": {
+    "normalization": "LF_LINE_ENDINGS_ONLY",
+    "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+    "upstream": "https://raw.githubusercontent.com/qt/qtbase/v6.12.0/LICENSES/LGPL-3.0-only.txt",
+    "upstream_sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+  },
+  "docs/licenses/et-xmlfile.txt": {
+    "normalization": "LF_LINE_ENDINGS_ONLY",
+    "sha256": "4ccdaaebc0f44b83720ec0399bb7ab329adce067dd62f73c5535a2dc05628ab2",
+    "upstream": "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl#et_xmlfile-2.0.0.dist-info/LICENCE.python",
+    "upstream_sha256": "4ccdaaebc0f44b83720ec0399bb7ab329adce067dd62f73c5535a2dc05628ab2"
+  },
+  "docs/licenses/openpyxl.txt": {
+    "normalization": "LF_LINE_ENDINGS_ONLY",
+    "sha256": "0c84bb42f5d367e5ebf9fc2dde35b16141df5ee0fdc189250858bc6c5560f69e",
+    "upstream": "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl#openpyxl-3.1.5.dist-info/LICENCE.rst",
+    "upstream_sha256": "0c84bb42f5d367e5ebf9fc2dde35b16141df5ee0fdc189250858bc6c5560f69e"
+  },
+  "docs/licenses/tomli-w.txt": {
+    "normalization": "LF_LINE_ENDINGS_ONLY",
+    "sha256": "b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe",
+    "upstream": "https://files.pythonhosted.org/packages/c7/18/c86eb8e0202e32dd3df50d43d7ff9854f8e0603945ff398974c1d91ac1ef/tomli_w-1.2.0-py3-none-any.whl#tomli_w-1.2.0.dist-info/LICENSE",
+    "upstream_sha256": "b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe"
+  }
+}

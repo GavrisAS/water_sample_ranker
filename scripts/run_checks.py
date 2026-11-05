@@ -65,7 +65,7 @@ def main() -> None:
         "pytest": stats,
     }
     (directory / "checks.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-    print("AUTOMATED_CHECKS_PASS — native Excel / human Windows UX NOT_RUN")
+    print("AUTOMATED_CHECKS_PASS; NATIVE_EXCEL_AND_HUMAN_WINDOWS_UX_NOT_RUN")
 
 
 if __name__ == "__main__":
