@@ -7,6 +7,12 @@ commit и не выдаётся за опубликованный релиз. С
 автономного verifier и наблюдаемое изменение mtime на NTFS. Добавлен Makefile
 по образцу исходного проекта; `version` не увеличивает release counter.
 
+v0.1.2 прошёл Linux/Windows checks, fresh Windows build и frozen GUI/version,
+но остановлен на frozen CLI validate (exit 2). Этот номер также не переиспользуется.
+Следующий кандидат v0.1.3 добавляет явный приватный --cli-log для windowed EXE
+и проверку фактического вывода CLI --version. Подробные smoke logs не включаются
+в release assets; в Actions допустима только обезличенная синтетическая диагностика.
+
 TECHNICAL PREVIEW — НЕ УТВЕРЖДЁННЫЙ РЕЙТИНГ.
 
 Исправлены две технические ошибки: частичные даты ГТМ сравниваются с cutoff по

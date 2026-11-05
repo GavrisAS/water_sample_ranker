@@ -10,6 +10,7 @@ from pathlib import Path
 from scripts.make_synthetic_demo import generate
 from water_sample_ranker.bundle import verify_bundle
 from water_sample_ranker.excel.compatibility import inspect_template
+from water_sample_ranker.handoff.evidence import clean_log
 
 
 def main() -> None:
@@ -23,42 +24,53 @@ def main() -> None:
     config = generate(run / "frozen-demo")
     day = date(2026, 11, 5)
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
-    for command in (
-        ["--version"],
-        ["--cli", "--version"],
-        ["--cli", "validate", "--project", str(config.root), "--as-of", day.isoformat()],
-        [
-            "--cli",
-            "update",
-            "--project",
-            str(config.root),
-            "--as-of",
-            day.isoformat(),
-            "--field",
-            "береговое",
-            "--output",
-            str(run / "single.xlsx"),
-        ],
-        [
-            "--cli",
-            "update-all",
-            "--project",
-            str(config.root),
-            "--as-of",
-            day.isoformat(),
-            "--output-dir",
-            str(run / "frozen-output"),
-        ],
+    for index, command in enumerate(
+        (
+            ["--version"],
+            ["--cli", "--version"],
+            ["--cli", "validate", "--project", str(config.root), "--as-of", day.isoformat()],
+            [
+                "--cli",
+                "update",
+                "--project",
+                str(config.root),
+                "--as-of",
+                day.isoformat(),
+                "--field",
+                "береговое",
+                "--output",
+                str(run / "single.xlsx"),
+            ],
+            [
+                "--cli",
+                "update-all",
+                "--project",
+                str(config.root),
+                "--as-of",
+                day.isoformat(),
+                "--output-dir",
+                str(run / "frozen-output"),
+            ],
+        )
     ):
-        subprocess.run(
+        log = run / f"cli-{index}.log"
+        if "--cli" in command:
+            command = ["--cli-log", str(log), *command]
+        completed = subprocess.run(
             [str(binary), *command],
             cwd=run,
             env=env,
-            check=True,
+            check=False,
             timeout=180,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        if completed.returncode:
+            if log.is_file():
+                print(clean_log(log.read_text(encoding="utf-8")[-16384:], Path.cwd(), run))
+            raise ValueError(f"FROZEN_CLI_STEP_{index}_FAILED_EXIT_{completed.returncode}")
+        if index == 1 and log.read_text(encoding="utf-8").strip() != args.version:
+            raise ValueError("FROZEN_CLI_VERSION_OUTPUT_MISMATCH")
     bundle = verify_bundle(
         run / "frozen-output", expected_date=day.isoformat(), expected_version=args.version
     )

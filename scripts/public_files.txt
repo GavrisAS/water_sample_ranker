@@ -104,6 +104,7 @@ tests/__init__.py
 tests/conftest.py
 tests/formula_subset.py
 tests/test_bundle_atomic.py
+tests/test_entrypoint.py
 tests/test_event_intervals.py
 tests/test_formula_golden.py
 tests/test_fund_reader.py
