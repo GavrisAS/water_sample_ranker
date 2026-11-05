@@ -738,3 +738,58 @@ def test_public_projection_binds_final_commit_but_never_moves_final_output(tmp_p
     with pytest.raises(v.HandoffError, match="PROJECTION_MISMATCH"):
         builder.build(real, output, builder.Options(run_checks=False), source_root=public)
     assert before == {p.name: p.read_bytes() for p in output.iterdir()}
+
+
+@pytest.mark.parametrize("escaped", [False, True])
+def test_windows_path_with_spaces_and_unicode_is_fully_sanitized(tmp_path, escaped):
+    slash = chr(92)
+    path = (
+        "D:" + slash + slash.join(("synthetic-user", "проект с пробелами", "artifacts", "test.py"))
+    )
+    if escaped:
+        path = path.replace(slash, slash * 2)
+    output = evidence.clean_log("WindowsPath('" + path + "')", tmp_path)
+    assert "synthetic-user" not in output and "пробелами" not in output
+    assert output == "WindowsPath('<ABSOLUTE_PATH>')"
+
+
+def test_network_log_paths_are_removed_without_relaxing_archive_policy(tmp_path):
+    path = chr(92) * 2 + "synthetic-server" + chr(92) + "share with spaces"
+    assert evidence.clean_log("Error '" + path + "'", tmp_path) == "Error '<NETWORK_PATH>'"
+    with pytest.raises(v.HandoffError, match="NETWORK_PATH"):
+        v.scan_text("raw.txt", path.encode())
+
+
+def test_unsafe_gate_log_retains_safe_failure_identity_and_cannot_pass(tmp_path):
+    secret = "ghp_" + "A" * 40
+    message = f"{secret}\nFAILED tests/test_handoff.py::test_synthetic[private-parameter] - detail"
+    script = tmp_path / "synthetic_failure.py"
+    script.write_text("print(" + repr(message) + ")")
+    gate, log = evidence.run_gate([sys.executable, str(script)], tmp_path, 10, "synthetic")
+    assert gate["status"] == "BLOCKED" and gate["returncode"] == 0 and not gate["log_complete"]
+    assert secret.encode() not in log and b"private-parameter" not in log
+    assert b"FAILED tests/test_handoff.py::test_synthetic" in log
+    assert b"LOG_POLICY_BLOCKED: CONTENT_TOKEN" in log
+    v.scan_text("safe.txt", log)
+
+
+def test_staged_files_are_flushed_with_windows_compatible_write_handles(source, monkeypatch):
+    import os
+    import stat
+
+    original = os.fsync
+    flushed_files = 0
+
+    def require_write(fd):
+        nonlocal flushed_files
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            os.write(fd, b"")  # EBADF on a read-only handle, as required by Windows flushing.
+            flushed_files += 1
+        return original(fd)
+
+    monkeypatch.setattr(os, "fsync", require_write)
+    manifest = builder.build(
+        source, source / "artifacts/handoff", builder.Options(run_checks=False)
+    )
+    assert flushed_files == 4
+    assert v.verify(manifest)["business_correctness"] == "UNKNOWN"

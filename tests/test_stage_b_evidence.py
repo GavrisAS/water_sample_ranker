@@ -472,3 +472,18 @@ def test_optional_rejects_whole_source_after_valid_record(tmp_path, role, bad):
     path.write_bytes(raw)
     result = read_optional(path, role.replace("_", "-"))
     assert result.status == "SCHEMA_DRIFT" and not result.plans and not result.points
+
+
+@pytest.mark.parametrize("bad", ["large_x", "large_y", "deep_json"])
+def test_optional_numeric_overflow_and_excessive_depth_decline_whole_source(tmp_path, bad):
+    from scripts.make_synthetic_demo import synthetic_optional
+
+    payload = synthetic_optional()["geodata"]
+    if bad != "deep_json":
+        payload["records"].append(dict(payload["records"][0], well="DEMO-SECOND"))
+        payload["records"][1]["x" if bad == "large_x" else "y"] = 10**1000
+    raw = "[" * 10000 + "0" + "]" * 10000 if bad == "deep_json" else json.dumps(payload)
+    path = tmp_path / "synthetic.json"
+    path.write_text(raw)
+    result = read_optional(path, "geodata")
+    assert result.status == "SCHEMA_DRIFT" and not result.plans and not result.points

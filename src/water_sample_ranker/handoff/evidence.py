@@ -94,10 +94,17 @@ def clean_log(text: str, root: Path, temporary: Path | None = None) -> str:
         (Path.home(), "<USER>"),
     ):
         if path:
-            for spelling in {str(path), str(path).replace("\\", "/")}:
+            for spelling in {
+                str(path),
+                str(path).replace("\\", "/"),
+                str(path).replace("\\", "\\\\"),
+            }:
                 text = text.replace(spelling, label)
     text = re.sub(r"/(?:tmp|var/tmp)/[^\s\"']+", "<TEMP>", text)
-    text = re.sub(r"(?<!\w)[A-Za-z]:[\\/][^\s\"']+", "<ABSOLUTE_PATH>", text)
+    # Windows pytest repr paths contain doubled slashes and spaces. Stopping at
+    # whitespace leaves their tail looking like an unredacted network path.
+    text = re.sub(r"(?<!\w)[A-Za-z]:[\\/][^\r\n\"']+", "<ABSOLUTE_PATH>", text)
+    text = re.sub(r"(?<!\\)\\{2,}[A-Za-z0-9?.][^\r\n\"']+", "<NETWORK_PATH>", text)
     # ANSI/terminal escape sequences не входят в evidence.
     text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
     policy.scan_text("command.txt", text.encode())
@@ -142,7 +149,19 @@ def run_gate(
         raw = output.read_bytes()[: 512 * 1024] if output.exists() else b""
         if not complete and status == "PASS":
             status = "PARTIAL"
-        text = clean_log(raw.decode("utf-8", errors="replace"), root, Path(tmp))
+        decoded = raw.decode("utf-8", errors="replace")
+        try:
+            text = clean_log(decoded, root, Path(tmp))
+        except policy.HandoffError as error:
+            # Keep fail-closed status while retaining only safe pytest identities;
+            # a rejected diagnostic must not hide which regression needs repair.
+            status, complete = "BLOCKED", False
+            text = "LOG_POLICY_BLOCKED: " + str(error) + "\n"
+            for kind, module, test in re.findall(
+                r"(?m)^(FAILED|ERROR) (tests/[A-Za-z0-9_/.]+\.py)::([A-Za-z0-9_]+)", decoded
+            ):
+                text += f"{kind} {module}::{test}\n"
+            policy.scan_text("command.txt", text.encode())
         if not complete:
             text += "\n[LOG_INCOMPLETE]\n"
     safe_command = ["python" if arg == sys.executable else arg for arg in command]

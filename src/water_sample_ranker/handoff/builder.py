@@ -741,7 +741,8 @@ def build(root: Path, output: Path, options: Options, *, source_root: Path | Non
             raise policy.HandoffError("INPUTS_CHANGED")
         order = [d["path"] for d in artifacts.values()] + [manifest["verification"], manifest_name]
         for filename in order:
-            with (stage / filename).open("rb") as stream:
+            # Windows _commit/FlushFileBuffers requires a handle with write access.
+            with (stage / filename).open("r+b") as stream:
                 os.fsync(stream.fileno())
         # Detect case/Unicode aliases too, including leftovers from an earlier crash.
         expected_names = {policy.safe_path(name) for name in order}

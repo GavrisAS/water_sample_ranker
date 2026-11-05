@@ -120,7 +120,8 @@ def read_optional(path: Path | None, role: str) -> OptionalInputs:
             tuple(points),
             "Контракт прочитан; схема обмена и применимость не утверждены",
         )
-    except ValueError, OSError, TypeError:
+    except ValueError, OSError, TypeError, OverflowError:
+        # Integers beyond float range are invalid coordinates, not reader crashes.
         return OptionalInputs(
             "SCHEMA_DRIFT",
             message="SCHEMA_DRIFT: ожидается строгий JSON v1; источник целиком отклонён",
