@@ -1,0 +1,20 @@
+# Пути относительно папки проекта или EXE; отсутствующие роли ищутся в data/ по содержимому.
+# Впишите пути только для реально имеющихся книг. Никаких сетевых зависимостей.
+selected_field = ""
+top_n = 5
+
+[paths]
+calculator = "templates/Water_Sample_Ranking_Calculator.xlsx"
+output = ""
+# Необязательный строгий JSON v1; пусто = SOURCE_UNAVAILABLE/UNKNOWN.
+gtm_plan = ""
+geodata = ""
+
+[criteria]
+cl_low = 2000.0
+cl_high = 8000.0
+cl_delta = 2000.0
+mineralization_max = 22000.0
+interval_days = 7.0
+water_l_day = 1000.0
+separator_m3_day = 6.912

@@ -1,0 +1,7 @@
+*.py text eol=lf
+*.xlsx binary
+docs/SPEC.md whitespace=-blank-at-eol
+data/ export-ignore
+artifacts/ export-ignore
+gdis_loader/ export-ignore
+config.toml export-ignore

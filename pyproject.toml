@@ -1,0 +1,39 @@
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[project]
+name = "water-sample-ranker"
+version = "0.1.1"
+description = "Отбор проб воды — technical preview, методика рейтинга ожидает утверждения"
+requires-python = ">=3.14,<3.15"
+readme = "README.md"
+dependencies = ["openpyxl>=3.1.5,<4", "PySide6-Essentials>=6.10,<7", "tomli-w>=1.2,<2"]
+
+[project.scripts]
+water-sample-ranker = "water_sample_ranker.cli:main"
+[project.gui-scripts]
+water-sample-ranker-gui = "water_sample_ranker.gui.app:main"
+
+[dependency-groups]
+dev = ["pytest>=8.4,<10", "ruff>=0.14", "ty>=0.0.1", "pyinstaller>=6.16"]
+
+[tool.uv.build-backend]
+source-exclude = ["data/**", "artifacts/**", "gdis_loader*/**", "outputs/**", "reports/**",
+    "config.toml", "*.xls*", ".env*", "docs/examples/**"]
+wheel-exclude = ["**/*.xlsx", "**/*.xlsm", "**/*.env", "**/private/**"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+exclude = ["gdis_loader", "data", "artifacts", ".venv"]
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+[tool.ty.environment]
+python-version = "3.14"
+root = ["./src", "."]
+[tool.ty.src]
+include = ["src", "tests", "scripts"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"

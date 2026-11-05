@@ -1,0 +1,64 @@
+name: Windows onedir
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Candidate version (manual runs never reserve or publish a release)
+        type: string
+        default: '0.1.1'
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      source_sha:
+        type: string
+        required: true
+      linux_checks:
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      UV_LINK_MODE: copy
+      BUILD_VERSION: ${{ inputs.version }}
+      SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+      LINUX_CHECKS_RESULT: ${{ inputs.linux_checks }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.4'
+      - run: uv python install 3.14
+      - run: ./scripts/build_windows.ps1 -BuildVersion $env:BUILD_VERSION -SourceSHA $env:SOURCE_SHA -PublicRelease
+        id: candidate
+        shell: pwsh
+      - name: Package verified release assets
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          if ($env:LINUX_CHECKS_RESULT -ne 'success') { throw 'Linux checks required' }
+          uv run python -m scripts.release_assets --version $env:BUILD_VERSION --source-sha $env:SOURCE_SHA --run-id $env:GITHUB_RUN_ID --run-number $env:GITHUB_RUN_NUMBER
+          if ($LASTEXITCODE -ne 0) { throw 'Public package verification failed' }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: candidate-v${{ inputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/private/release-assets/*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: manual-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.candidate.outputs.bundle }}/
+          if-no-files-found: error
+          retention-days: 7

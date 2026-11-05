@@ -1,0 +1,60 @@
+# Counter identity: never rename/delete this workflow or add non-push triggers.
+name: Main prerelease series
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.reserve.outputs.version }}
+      tag: ${{ steps.reserve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.4'
+      - run: uv python install 3.14
+      - run: uv sync --locked
+      - run: uv run python -m scripts.next_version
+        id: reserve
+  linux-checks:
+    uses: ./.github/workflows/ci.yml
+    with:
+      platforms: '["ubuntu-latest"]'
+  windows-build:
+    needs: [version, linux-checks]
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      source_sha: ${{ github.sha }}
+      linux_checks: ${{ needs.linux-checks.result }}
+  release:
+    needs: [version, linux-checks, windows-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: public-prerelease-${{ needs.version.outputs.tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.4'
+      - run: uv python install 3.14
+      - run: uv sync --locked
+      - run: uv run python -m scripts.public_gate
+      - name: Verify, tag, publish and download to verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run python -m scripts.publish_release
