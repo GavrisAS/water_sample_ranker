@@ -63,7 +63,12 @@ def read_optional(path: Path | None, role: str) -> OptionalInputs:
             raise ValueError("FORMAT")
         if role not in {"gtm-plan", "geodata"}:
             raise ValueError("ROLE")
-        raw: Any = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+        # stat alone cannot enforce the limit if a producer replaces/grows the file.
+        with path.open("rb") as stream:
+            payload = stream.read(4 * 1024**2 + 1)
+        if len(payload) > 4 * 1024**2:
+            raise ValueError("FORMAT")
+        raw: Any = json.loads(payload.decode("utf-8"), object_pairs_hook=_unique_object)
         if not isinstance(raw, dict) or set(raw) != {"schema", "records"}:
             raise ValueError("ROOT")
         if raw["schema"] != f"water-{role}-v1" or not isinstance(raw["records"], list):

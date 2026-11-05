@@ -1,6 +1,7 @@
 UV ?= uv
 BUILD_VERSION ?= 0.1.1
 DEMO_DIR ?= artifacts/private/demo-make
+AUDIT_ARGS ?=
 ARGS ?=
 
 .PHONY: help sync lint format format-check typecheck test check run cli version \
@@ -10,7 +11,7 @@ help:
 	@echo "make sync / check / run / cli ARGS='--help' / version"
 	@echo "make demo DEMO_DIR=artifacts/private/new-demo"
 	@echo "make build / build-windows BUILD_VERSION=0.1.1"
-	@echo "make privacy / public-check / audit: only the clean public projection"
+	@echo "make privacy / public-check: clean public projection; audit: real project root"
 	@echo "make clean: caches only; inputs, outputs and private artifacts are preserved"
 
 sync:
@@ -62,8 +63,8 @@ privacy:
 public-check:
 	$(UV) run python -m scripts.run_checks --public
 
-audit: privacy
-	$(UV) run python -m scripts.build_handoff --mode share-safe --include-template-binary
+audit:
+	$(UV) run python -m scripts.build_handoff --mode share-safe --include-template-binary $(AUDIT_ARGS)
 
 clean:
 	$(UV) run python -c "from pathlib import Path; import shutil; [shutil.rmtree(Path(p), ignore_errors=True) for p in ('.pytest_cache', '.ruff_cache', '.ty_cache')]"

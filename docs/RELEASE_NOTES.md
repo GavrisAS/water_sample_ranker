@@ -40,3 +40,13 @@ Source/development версия согласована на 0.1.1; Excel format 
 checksums и GitHub Actions run. Production qualification в public CI NOT_RUN;
 native Excel и человеческая Windows UX NOT_RUN/PENDING. Вопросы заказчику ведутся
 отдельно и не публикуются. Подробности — RELEASE_PROCESS.md.
+
+
+Flat handoff: единый каталог artifacts/handoff в реальном проекте, четыре
+абсолютных пути, запрет альтернативного root/output и symlink traversal,
+сохранение предыдущих комплектов и чужих остатков, проверка file identities
+при откате. Разрешённая публичная проекция сверяется с реальными исходниками.
+Строгие optional JSON ограничиваются по фактически прочитанным bytes даже при
+устаревшем stat. Добавлены граничные/метаморфные тесты №2–6; бизнес-пороги,
+веса, matching и Excel template не менялись. №1/7–9 остаются UNKNOWN,
+баллы/ранги/TOP пусты. Native Excel и ручная Windows UX ожидают приёмки.

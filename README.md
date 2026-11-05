@@ -33,8 +33,13 @@ CLI использует тот же service: `uv run water-sample-ranker --help
 Команды разработчика по образцу ГДИС собраны в [Makefile](Makefile):
 `make sync`, `make check`, `make run`, `make cli`, `make version`, `make demo`,
 `make build` / `make build-windows`. `make help` перечисляет параметры.
-`make privacy`, `make public-check` и `make audit` выполняются из очищенной
-публичной копии; исходная локальная история с приватными документами их не проходит.
+`make privacy` и `make public-check` выполняются из очищенной публичной копии;
+исходная локальная история с приватными документами их не проходит.
+`make audit` запускают в реальном проекте: четыре файла каждого нового ID
+пишутся прямо в `<PROJECT_ROOT>/artifacts/handoff/`, stdout показывает абсолютные
+пути/размеры/SHA. Другой CWD не меняет результат; альтернативный выход запрещён.
+Для релиза из публичной проекции используйте `AUDIT_ARGS='--public-source-root <PUBLIC_CHECKOUT>'`;
+конечная папка остаётся в реальном проекте.
 `make clean` удаляет только кэши проверок.
 
 [Релизный процесс](docs/RELEASE_PROCESS.md) использует серию `v0.1.PATCH`,

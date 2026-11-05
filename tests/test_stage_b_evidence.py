@@ -431,3 +431,44 @@ def test_optional_contract_rejects_semantic_drift(tmp_path, kind):
     p.write_text(text)
     result = read_optional(p, role.replace("_", "-"))
     assert result.status == "SCHEMA_DRIFT" and not result.plans and not result.points
+
+
+@pytest.mark.parametrize("role", ["gtm-plan", "geodata"])
+def test_optional_size_bound_survives_stale_stat(tmp_path, monkeypatch, role):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    p = tmp_path / "synthetic-large.json"
+    p.write_bytes(b" " * (4 * 1024**2 + 1))
+    original = Path.stat
+
+    def stale_stat(path, *args, **kwargs):
+        actual = original(path, *args, **kwargs)
+        if path == p:
+            return SimpleNamespace(st_mode=actual.st_mode, st_size=1)
+        return actual
+
+    monkeypatch.setattr(Path, "stat", stale_stat)
+    result = read_optional(p, role)
+    assert result.status == "SCHEMA_DRIFT" and not result.plans and not result.points
+
+
+@pytest.mark.parametrize("role", ["gtm_plan", "geodata"])
+@pytest.mark.parametrize("bad", ["duplicate_key", "second_record", "schema_type", "invalid_utf8"])
+def test_optional_rejects_whole_source_after_valid_record(tmp_path, role, bad):
+    from scripts.make_synthetic_demo import synthetic_optional
+
+    payload = synthetic_optional()[role]
+    if bad == "schema_type":
+        payload["schema"] = []
+    if bad == "second_record":
+        payload["records"].append({"field": "DEMO"})
+    raw = json.dumps(payload).encode()
+    if bad == "duplicate_key":
+        raw = raw.replace(b'"stage": 0', b'"stage": 0, "stage": 1')
+    if bad == "invalid_utf8":
+        raw += b"\xff"
+    path = tmp_path / "synthetic-invalid.json"
+    path.write_bytes(raw)
+    result = read_optional(path, role.replace("_", "-"))
+    assert result.status == "SCHEMA_DRIFT" and not result.plans and not result.points

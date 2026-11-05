@@ -170,3 +170,46 @@ def test_previous_only_conflict_does_not_discard_confirmed_latest_facts() -> Non
     empty = SamplePair(conflict=True, reason="DUPLICATE_TIMESTAMP_CONFLICT")
     assert water_rate(empty).state == Truth.UNKNOWN
     assert duration(empty, date(2026, 11, 5))[1] is None
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), -0.1])
+@pytest.mark.parametrize("field", ["chlorine", "mineralization", "water_l_day"])
+def test_nonfinite_or_negative_measurements_never_form_negative_decisions(bad, field):
+    p = pair(**{field: bad})
+    affected = {"chlorine": (2, 3, 6), "mineralization": (2,), "water_l_day": (6,)}[field]
+    for number in affected:
+        c = water_rate(p) if number == 6 else chlorine(p, number)
+        assert c.state == Truth.UNKNOWN
+        assert c.normalized_score is None and c.weighted_contribution is None
+    if field == "water_l_day":
+        assert separator(p, "ПК1") == "UNKNOWN"
+
+
+@pytest.mark.parametrize("offset", [-365, -1, 1, 365])
+def test_agreed_decisions_are_invariant_under_common_date_translation(offset):
+    p = pair(conclusion="Т?")
+    assert p.last is not None and p.previous is not None
+    assert p.last.date is not None and p.previous.date is not None
+    shifted = SamplePair(
+        replace(p.last, date=p.last.date + timedelta(days=offset)),
+        replace(p.previous, date=p.previous.date + timedelta(days=offset)),
+    )
+    for decision in (
+        lambda x: chlorine(x, 2),
+        lambda x: chlorine(x, 3),
+        lambda x: technical(x, well="501"),
+        disputed,
+        water_rate,
+    ):
+        a, b = decision(p), decision(shifted)
+        assert a.state == b.state
+        assert a.raw_value == b.raw_value
+        assert a.normalized_score is b.normalized_score is None
+
+
+@pytest.mark.parametrize("seconds,expected", [(0, Truth.FALSE), (1, Truth.TRUE)])
+def test_seven_days_boundary_uses_elapsed_time(seconds, expected):
+    last = sample(date=datetime(2026, 8, 20), chlorine=6001)
+    assert last.date is not None
+    previous = sample(date=last.date - timedelta(days=7, seconds=seconds), chlorine=3000)
+    assert chlorine(SamplePair(last, previous), 2).state == expected

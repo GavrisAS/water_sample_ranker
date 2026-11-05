@@ -12,12 +12,14 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from uuid import uuid4
 
 from scripts import verify_handoff as policy
+from water_sample_ranker.bundle import sync_directory
 from water_sample_ranker.handoff import evidence
 
 
@@ -38,6 +40,82 @@ class Options:
         self.frozen = frozen
         self.include_template = include_template
         self.timeout = timeout
+
+
+def project_root(root: Path) -> Path:
+    """An explicit project, never an ancestor inferred from the caller's cwd."""
+    root = root.absolute()
+    if any(p.is_symlink() for p in (root, *root.parents)):
+        raise policy.HandoffError("PROJECT_SYMLINK")
+    try:
+        config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        if config["project"]["name"] != "water-sample-ranker":
+            raise ValueError
+        if not (root / "scripts/build_handoff.py").is_file():
+            raise ValueError
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if top.returncode or Path(top.stdout.strip()).resolve() != root.resolve():
+            raise ValueError
+        # A public projection nested inside the real project is a source only.
+        if any((p / ".git").exists() and (p / "pyproject.toml").is_file() for p in root.parents):
+            raise ValueError
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+        raise policy.HandoffError("PROJECT_ROOT_UNCONFIRMED") from error
+    return root.resolve()
+
+
+def canonical_output(root: Path, requested: Path) -> Path:
+    if ".." in requested.parts or "\\" in str(requested) or PureWindowsPath(str(requested)).drive:
+        # Native absolute Windows paths are checked by pathlib on Windows.
+        if os.name != "nt" or ".." in requested.parts:
+            raise policy.HandoffError("NONCANONICAL_OUTPUT_DIRECTORY")
+    candidate = requested if requested.is_absolute() else root / requested
+    expected = root / "artifacts/handoff"
+    if any(p.is_symlink() for p in (candidate, *candidate.parents, expected, expected.parent)):
+        raise policy.HandoffError("OUTPUT_SYMLINK")
+    if candidate.resolve() != expected:
+        raise policy.HandoffError("NONCANONICAL_OUTPUT_DIRECTORY")
+    return expected
+
+
+def identity(path: Path) -> tuple[int, int]:
+    stat = path.lstat()
+    return stat.st_dev, stat.st_ino
+
+
+def bind_projection(root: Path, source: Path) -> None:
+    """Only a clean, byte-verified public projection may supply release identity."""
+    from scripts.public_gate import PRIVATE_DOCUMENTS, allowed_names, public_document, scan_tree
+
+    if any(p.is_symlink() for p in (source, *source.parents)):
+        raise policy.HandoffError("SOURCE_SYMLINK")
+    top = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], cwd=source, text=True)
+    if Path(top.strip()).resolve() != source:
+        raise policy.HandoffError("PROJECT_ROOT_UNCONFIRMED")
+    names = allowed_names(root)
+    scan_tree(source, history=False)
+    for name in names:
+        original = root / name
+        if original.is_symlink():
+            raise policy.HandoffError("SOURCE_SYMLINK")
+        data = original.read_bytes()
+        if name.startswith("docs/") and original.name in PRIVATE_DOCUMENTS:
+            data = public_document(original.name)
+        elif original.suffix == ".py":
+            data, _ = projection(data)
+        if (source / name).read_bytes() != data:
+            raise policy.HandoffError("PUBLIC_PROJECTION_MISMATCH")
+    if subprocess.check_output(["git", "status", "--porcelain"], cwd=source):
+        raise policy.HandoffError("PUBLIC_PROJECTION_DIRTY")
 
 
 def projection(data: bytes) -> tuple[bytes, list[str]]:
@@ -82,6 +160,8 @@ def select_files(root: Path, include_template: bool) -> list[str]:
 
 
 def git_state(root: Path, selected: list[str]) -> tuple[dict[str, Any], dict[str, bytes]]:
+    from scripts.public_gate import PRIVATE_DOCUMENTS
+
     def git(*args: str) -> subprocess.CompletedProcess[bytes]:
         return subprocess.run(
             ["git", "--no-optional-locks", *args],
@@ -89,7 +169,10 @@ def git_state(root: Path, selected: list[str]) -> tuple[dict[str, Any], dict[str
             capture_output=True,
             timeout=30,
             check=False,
-            env=dict(os.environ, GIT_TERMINAL_PROMPT="0"),
+            env={
+                **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+                "GIT_TERMINAL_PROMPT": "0",
+            },
         )
 
     try:
@@ -125,8 +208,11 @@ def git_state(root: Path, selected: list[str]) -> tuple[dict[str, Any], dict[str
             else:
                 excluded += 1
         patches = {}
+        diff_names = [
+            n for n in selected if not (n.startswith("docs/") and Path(n).name in PRIVATE_DOCUMENTS)
+        ]
         for label, args in (("WORKTREE", []), ("STAGED", ["--cached"])):
-            diff = git("diff", "--no-ext-diff", "--no-textconv", *args, "--", *selected)
+            diff = git("diff", "--no-ext-diff", "--no-textconv", *args, "--", *diff_names)
             if diff.returncode:
                 raise policy.HandoffError("GIT_DIFF_FAILED")
             patches[f"evidence/{label}.patch"] = diff.stdout
@@ -162,6 +248,8 @@ def git_state(root: Path, selected: list[str]) -> tuple[dict[str, Any], dict[str
 def snapshot(
     root: Path, options: Options
 ) -> tuple[dict[str, bytes], dict[str, Any], dict[str, Any]]:
+    from scripts.public_gate import PRIVATE_DOCUMENTS, public_document
+
     names = select_files(root, options.include_template)
     git, patches = git_state(root, names)
     payloads = {}
@@ -181,6 +269,9 @@ def snapshot(
             data, transforms = raw, []
         else:
             data, transforms = projection(raw)
+            if name.startswith("docs/") and path.name in PRIVATE_DOCUMENTS:
+                data = public_document(path.name)
+                transforms = ["PRIVATE_DOCUMENT_REPLACED"] if data != raw else []
             policy.scan_member(name, data)
         payloads["audit/" + name] = data
         entries[name] = {
@@ -396,22 +487,31 @@ def review_report(
     return "\n".join(rows) + "\n"
 
 
-def build(root: Path, output: Path, options: Options) -> Path:
-    root = root.resolve()
-    output = output.resolve()
-    # Публикация никогда не может попасть в исходный/reference каталог.
-    if any(
-        output.is_relative_to((root / d).resolve())
-        for d in ("data", "src", "tests", "docs", "templates", ".git", ".venv")
-    ) or any(output.is_relative_to(p.resolve()) for p in root.glob("gdis_loader*")):
-        raise policy.HandoffError("UNSAFE_OUTPUT_DIRECTORY")
+def build(root: Path, output: Path, options: Options, *, source_root: Path | None = None) -> Path:
+    root = project_root(root)
+    output = canonical_output(root, output)
+    source_root = source_root.resolve() if source_root is not None else root
+    if source_root != root:
+        bind_projection(root, source_root)
+    root_identity = identity(root)
+    output.mkdir(parents=True, exist_ok=True)
+    output_identity = identity(output)
+
+    def current() -> None:
+        if identity(root) != root_identity or canonical_output(root, output) != output:
+            raise policy.HandoffError("OUTPUT_DIRECTORY_CHANGED")
+        if identity(output) != output_identity:
+            raise policy.HandoffError("OUTPUT_DIRECTORY_CHANGED")
+        if source_root != root:
+            bind_projection(root, source_root)
+
     created = datetime.now(UTC).isoformat()
     hid = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:12]
     active, inputs = evidence.input_inventory(root)
     protected_before = evidence.protected(root, active)
-    payloads, entries, source = snapshot(root, options)
+    payloads, entries, source = snapshot(source_root, options)
     gates, logs, versions = evidence.checks(
-        root, options.run_checks, options.sync_locked, options.frozen, options.timeout
+        source_root, options.run_checks, options.sync_locked, options.frozen, options.timeout
     )
     excel = evidence.excel_inventory(active["calculator"])
     excel["binary"] = (
@@ -483,7 +583,7 @@ def build(root: Path, output: Path, options: Options) -> Path:
         release_data = policy.limited_read(release_receipt)
         policy.check_public_release(release_data, source["git"]["head"])
         gates["public_release"] = {"status": "PASS", "scope": "STATIC_DOWNLOADED_EVIDENCE_ONLY"}
-    source_still_current(root, options, entries, source)
+    source_still_current(source_root, options, entries, source)
     if evidence.protected(root, active) != protected_before:
         raise policy.HandoffError("INPUTS_CHANGED")
     gates["input_preservation"] = {"status": "PASS"}
@@ -579,8 +679,8 @@ def build(root: Path, output: Path, options: Options) -> Path:
         review["review/reports/public_release.json"] = release_data
     for name, data in (payloads | review).items():
         policy.scan_member(name, data)
-    output.mkdir(parents=True, exist_ok=True)
-    published = []
+    current()
+    published: list[tuple[Path, tuple[int, int]]] = []
     with tempfile.TemporaryDirectory(prefix=".handoff-stage-", dir=output.parent) as staging:
         stage = Path(staging)
         artifacts: dict[str, Any] = {}
@@ -636,22 +736,34 @@ def build(root: Path, output: Path, options: Options) -> Path:
         independent(stage / manifest_name, True)
         if release_data is not None and release_receipt.read_bytes() != release_data:
             raise policy.HandoffError("STALE_PUBLIC_RELEASE_RECEIPT")
-        source_still_current(root, options, entries, source)
+        source_still_current(source_root, options, entries, source)
         if evidence.protected(root, active) != protected_before:
             raise policy.HandoffError("INPUTS_CHANGED")
         order = [d["path"] for d in artifacts.values()] + [manifest["verification"], manifest_name]
+        for filename in order:
+            with (stage / filename).open("rb") as stream:
+                os.fsync(stream.fileno())
+        # Detect case/Unicode aliases too, including leftovers from an earlier crash.
+        expected_names = {policy.safe_path(name) for name in order}
+        if any(policy.safe_path(p.name) in expected_names for p in output.iterdir()):
+            raise policy.HandoffError("OUTPUT_COLLISION")
         try:
             for filename in order:
+                current()
                 target = output / filename
+                own_identity = identity(stage / filename)
                 os.link(stage / filename, target)  # atomic no-replace, staging на той же FS
-                published.append(target)
+                published.append((target, own_identity))
+            sync_directory(output)
             independent(output / manifest_name, False)
-            source_still_current(root, options, entries, source)
+            current()
+            source_still_current(source_root, options, entries, source)
             if evidence.protected(root, active) != protected_before:
                 raise policy.HandoffError("INPUTS_CHANGED")
         except BaseException:
-            for path in reversed(published):
-                path.unlink(missing_ok=True)
+            for path, own_identity in reversed(published):
+                if path.exists() and identity(path) == own_identity:
+                    path.unlink()
             raise
     return output / manifest_name
 
@@ -660,6 +772,11 @@ def main(argv: list[str] | None = None, *, root: Path | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", choices=["share-safe"], default="share-safe")
     p.add_argument("--output-dir", type=Path, default=Path("artifacts/handoff"))
+    p.add_argument(
+        "--public-source-root",
+        type=Path,
+        help="Clean public Git projection; final output stays in the real project",
+    )
     p.add_argument("--skip-checks", action="store_true")
     p.add_argument("--sync-locked", action="store_true")
     p.add_argument("--with-production-validation", action="store_true")
@@ -680,28 +797,11 @@ def main(argv: list[str] | None = None, *, root: Path | None = None) -> int:
     try:
         if not 0 < args.timeout <= 3600:
             raise policy.HandoffError("TIMEOUT_RANGE")
-        manifest = build(root, output, options)
+        manifest = build(root, output, options, source_root=args.public_source_root)
     except (Exception, KeyboardInterrupt) as error:
         category = str(error) if isinstance(error, policy.HandoffError) else "INTERNAL_ERROR"
         if not re.fullmatch("[A-Z_]+", category):
             category = "INTERNAL_ERROR"
-        failure_output = (root / "artifacts/handoff").resolve()
-        try:
-            protected_dirs = [
-                root / d for d in ("data", "src", "tests", "docs", "templates", ".git", ".venv")
-            ]
-            protected_dirs.extend(root.glob("gdis_loader*"))
-            if not any(failure_output.is_relative_to(d.resolve()) for d in protected_dirs):
-                failure_output.mkdir(parents=True, exist_ok=True)
-                report = failure_output / ("handoff-failure-" + uuid4().hex[:12] + ".json")
-                report.write_bytes(
-                    policy.canonical(
-                        {"status": "BLOCKED", "category": category, "secret_values_printed": False}
-                    )
-                )
-        except OSError:
-            # stdout остаётся безопасной диагностикой даже без доступа к каталогу.
-            pass
         print("BLOCKED: " + category)
         return 2
     receipt = policy.parse_json(manifest.read_bytes(), seal=True)
@@ -711,10 +811,8 @@ def main(argv: list[str] | None = None, *, root: Path | None = None) -> int:
         receipt["verification"],
     ]:
         file = manifest.parent / name
-        label = (
-            file.relative_to(root).as_posix() if file.is_relative_to(root) else "<OUTPUT>/" + name
-        )
-        print(f"{label}  {file.stat().st_size} bytes  SHA256={policy.sha(file.read_bytes())}")
+        digest = policy.sha(file.read_bytes())
+        print(f"{file.absolute()}  {file.stat().st_size} bytes  SHA256={digest}")
     print(
         "HANDOFF "
         + receipt["status"]

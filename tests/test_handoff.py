@@ -98,13 +98,19 @@ def source(tmp_path: Path) -> Path:
     for name in builder.select_files(PROJECT, False):
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(PROJECT / name, target)
+        from scripts.public_gate import PRIVATE_DOCUMENTS, public_document
+
+        if name.startswith("docs/") and target.name in PRIVATE_DOCUMENTS:
+            target.write_bytes(public_document(target.name))
+        else:
+            shutil.copyfile(PROJECT / name, target)
+    subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
     return root
 
 
 @pytest.fixture
 def bundle(source: Path, tmp_path: Path) -> Path:
-    return builder.build(source, tmp_path / "передача", builder.Options(run_checks=False))
+    return builder.build(source, source / "artifacts/handoff", builder.Options(run_checks=False))
 
 
 def four(manifest: Path) -> list[Path]:
@@ -295,7 +301,7 @@ def test_secret_in_allowlisted_source_blocks_and_preserves_inputs(
     before = evidence.stamp(private)
     unsafe = source / "src/water_sample_ranker/unsafe.py"
     unsafe.write_text("access_" + 'token = "' + "ghp_" + "A" * 40 + '"')
-    target = tmp_path / "output"
+    target = source / "artifacts/handoff"
     with pytest.raises(v.HandoffError, match="CONTENT_"):
         builder.build(source, target, builder.Options(run_checks=False))
     assert evidence.stamp(private) == before
@@ -315,8 +321,8 @@ def test_toctou_source_change_blocks_before_publication(
 
     monkeypatch.setattr(evidence, "checks", mutate)
     with pytest.raises(v.HandoffError, match="STALE_SOURCE"):
-        builder.build(source, tmp_path / "output", builder.Options(run_checks=False))
-    assert not list((tmp_path / "output").glob("*.tar.*"))
+        builder.build(source, source / "artifacts/handoff", builder.Options(run_checks=False))
+    assert not list((source / "artifacts/handoff").glob("*.tar.*"))
 
 
 def test_git_dirty_untracked_and_no_head(source: Path) -> None:
@@ -355,8 +361,8 @@ def test_history_is_never_fresh_pass_and_invalid_production_is_safe(source: Path
 def test_independent_failure_removes_only_own_published_files(
     source: Path, tmp_path: Path, monkeypatch
 ) -> None:
-    target = tmp_path / "output"
-    target.mkdir()
+    target = source / "artifacts/handoff"
+    target.mkdir(parents=True)
     old = target / "old-success.tar.gz"
     old.write_bytes(b"keep")
     original = subprocess.run
@@ -393,7 +399,9 @@ def test_scanned_template_roundtrip_is_available_for_independent_review(source, 
     target.parent.mkdir(parents=True)
     target.write_bytes((PROJECT / name).read_bytes())
     manifest = builder.build(
-        source, tmp_path / "with-template", builder.Options(run_checks=False, include_template=True)
+        source,
+        source / "artifacts/handoff",
+        builder.Options(run_checks=False, include_template=True),
     )
     assert v.verify(manifest)["business_correctness"] == "UNKNOWN"
     m = v.parse_json(manifest.read_bytes(), seal=True)
@@ -439,13 +447,20 @@ def test_absolute_cli_no_cwd_dependency_and_readonly_project(source: Path, tmp_p
             str(source / "scripts/build_handoff.py"),
             "--skip-checks",
             "--output-dir",
-            str(tmp_path / "output"),
+            str(source / "artifacts/handoff"),
         ],
         cwd=tmp_path,
         capture_output=True,
         timeout=60,
     )
     assert result.returncode == 0, result.stdout.decode()
+    lines = result.stdout.decode().splitlines()
+    assert len(lines) == 5
+    assert all(
+        line.startswith(str(source / "artifacts/handoff") + __import__("os").sep)
+        for line in lines[:4]
+    )
+    assert len(list((source / "artifacts/handoff").iterdir())) == 4
     assert all(evidence.stamp(source / n) == fp for n, fp in before.items())
 
 
@@ -483,8 +498,8 @@ def test_input_mutation_is_blocked(source: Path, tmp_path: Path, monkeypatch) ->
 
     monkeypatch.setattr(evidence, "checks", mutate)
     with pytest.raises(v.HandoffError, match="INPUTS_CHANGED"):
-        builder.build(source, tmp_path / "output", builder.Options(run_checks=False))
-    assert not list((tmp_path / "output").glob("*.tar.*"))
+        builder.build(source, source / "artifacts/handoff", builder.Options(run_checks=False))
+    assert not list((source / "artifacts/handoff").glob("*.tar.*"))
 
 
 def test_tar_hidden_trailer_rejected_even_with_new_outer_hash(bundle: Path, tmp_path: Path) -> None:
@@ -535,3 +550,191 @@ def test_oversized_sidecar_rejected_before_read(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setattr(Path, "read_bytes", forbidden)
     with pytest.raises(v.HandoffError, match="SIZE"):
         v.verify(path)
+
+
+@pytest.mark.parametrize(
+    "requested",
+    [
+        "elsewhere",
+        "artifacts/handoff/nested",
+        "artifacts/../artifacts/handoff",
+        "C:" + chr(92) + "handoff",
+    ],
+)
+def test_alternative_output_is_blocked_before_writes(source, requested):
+    with pytest.raises(v.HandoffError, match="NONCANONICAL"):
+        builder.build(source, Path(requested), builder.Options(run_checks=False))
+    assert not (source / "artifacts").exists()
+
+
+@pytest.mark.parametrize("kind", ["output", "parent", "alias"])
+def test_output_symlinks_are_rejected_before_writes(source, tmp_path, kind):
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    output = source / "artifacts/handoff"
+    try:
+        if kind == "parent":
+            (source / "artifacts").symlink_to(outside, target_is_directory=True)
+        elif kind == "output":
+            output.parent.mkdir()
+            output.symlink_to(outside, target_is_directory=True)
+        else:
+            output.mkdir(parents=True)
+            alias = source / "alias"
+            alias.symlink_to(output, target_is_directory=True)
+            output = alias
+    except OSError:
+        pytest.skip("OS does not grant symlink creation")
+    with pytest.raises(v.HandoffError, match="SYMLINK"):
+        builder.build(source, output, builder.Options(run_checks=False))
+    assert not list(outside.iterdir())
+
+
+def test_nested_or_forged_git_root_cannot_supply_final_directory(source):
+    nested = source / "nested"
+    nested.mkdir()
+    shutil.copyfile(source / "pyproject.toml", nested / "pyproject.toml")
+    (nested / "scripts").mkdir()
+    shutil.copyfile(source / "scripts/build_handoff.py", nested / "scripts/build_handoff.py")
+    with pytest.raises(v.HandoffError, match="ROOT_UNCONFIRMED"):
+        builder.build(nested, nested / "artifacts/handoff", builder.Options(run_checks=False))
+    subprocess.run(["git", "init"], cwd=nested, capture_output=True, check=True)
+    with pytest.raises(v.HandoffError, match="ROOT_UNCONFIRMED"):
+        builder.build(nested, nested / "artifacts/handoff", builder.Options(run_checks=False))
+    assert not (nested / "artifacts").exists()
+
+
+@pytest.mark.parametrize("fail_at", [1, 2, 3, 4])
+def test_each_publication_failure_removes_incomplete_set_only(source, monkeypatch, fail_at):
+    import os
+
+    output = source / "artifacts/handoff"
+    output.mkdir(parents=True)
+    old = output / "old.tar.gz"
+    old.write_bytes(b"previous set preserved")
+    original = os.link
+    calls = 0
+
+    def fail(source_file, target):
+        nonlocal calls
+        calls += 1
+        if calls == fail_at:
+            raise OSError("injected write failure")
+        return original(source_file, target)
+
+    monkeypatch.setattr(os, "link", fail)
+    with pytest.raises(OSError, match="injected"):
+        builder.build(source, output, builder.Options(run_checks=False))
+    assert list(output.iterdir()) == [old]
+    assert old.read_bytes() == b"previous set preserved"
+    assert not list(output.parent.glob(".handoff-stage-*"))
+
+
+def test_repeated_id_never_overwrites_old_set(source, monkeypatch):
+    class FixedTime:
+        @staticmethod
+        def now(tz):
+            from datetime import datetime
+
+            return datetime(2026, 1, 1, tzinfo=tz)
+
+    class FixedID:
+        hex = "abcdef01234500000000000000000000"
+
+    monkeypatch.setattr(builder, "datetime", FixedTime)
+    monkeypatch.setattr(builder, "uuid4", FixedID)
+    output = source / "artifacts/handoff"
+    first = builder.build(source, output, builder.Options(run_checks=False))
+    before = {p.name: p.read_bytes() for p in four(first)}
+    with pytest.raises(v.HandoffError, match="OUTPUT_COLLISION"):
+        builder.build(source, output, builder.Options(run_checks=False))
+    assert {p.name: p.read_bytes() for p in output.iterdir()} == before
+
+
+def test_directory_substitution_is_blocked(source, monkeypatch):
+    original = evidence.checks
+    output = source / "artifacts/handoff"
+
+    def substitute(*args, **kwargs):
+        result = original(*args, **kwargs)
+        output.rename(output.with_name("preserved-original"))
+        output.mkdir()
+        return result
+
+    monkeypatch.setattr(evidence, "checks", substitute)
+    with pytest.raises(v.HandoffError, match="DIRECTORY_CHANGED"):
+        builder.build(source, output, builder.Options(run_checks=False))
+    assert not list(output.iterdir())
+
+
+def test_rollback_preserves_replacement_owned_by_someone_else(source, monkeypatch):
+    import os
+
+    original = os.link
+    output = source / "artifacts/handoff"
+    replaced = None
+
+    def fail(source_file, target):
+        nonlocal replaced
+        if replaced is None:
+            original(source_file, target)
+            replaced = target
+            return
+        replaced.unlink()
+        replaced.write_bytes(b"foreign crash evidence")
+        raise OSError("injected replacement")
+
+    monkeypatch.setattr(os, "link", fail)
+    with pytest.raises(OSError, match="injected"):
+        builder.build(source, output, builder.Options(run_checks=False))
+    assert list(output.iterdir()) == [replaced]
+    assert replaced is not None
+    assert replaced.read_bytes() == b"foreign crash evidence"
+
+
+def test_private_documents_and_their_diffs_are_projected_without_original_text(source):
+    from scripts.public_gate import public_document
+
+    path = source / "docs/OPEN_QUESTIONS.md"
+    marker = "SYNTHETIC_" + "PRIVATE_DOCUMENT_BYTES"
+    path.write_text(marker)
+    subprocess.run(["git", "add", "docs/OPEN_QUESTIONS.md"], cwd=source, check=True)
+    payload, entries, _ = builder.snapshot(source, builder.Options(run_checks=False))
+    assert payload["audit/docs/OPEN_QUESTIONS.md"] == public_document(path.name)
+    assert entries["docs/OPEN_QUESTIONS.md"]["transformations"] == ["PRIVATE_DOCUMENT_REPLACED"]
+    assert not any(marker.encode() in data for data in payload.values())
+    assert path.read_text() == marker
+
+
+def test_public_projection_binds_final_commit_but_never_moves_final_output(tmp_path):
+    from scripts.prepare_public import prepare
+    from scripts.public_gate import allowed_names
+
+    real = tmp_path / "реальный проект"
+    prepare(PROJECT, real)
+    subprocess.run(["git", "init", "-b", "main"], cwd=real, check=True, capture_output=True)
+    public = real / "artifacts/private/public"
+    prepare(real, public)
+    for args in (
+        ["init", "-b", "main"],
+        ["config", "user.name", "DEMO"],
+        ["config", "user.email", "demo@" + "users.noreply.github.com"],
+        ["add", "--", *sorted(allowed_names(public))],
+        ["commit", "-m", "SYNTHETIC PROJECTION"],
+    ):
+        subprocess.run(["git", *args], cwd=public, check=True, capture_output=True)
+    output = real / "artifacts/handoff"
+    result = builder.build(real, output, builder.Options(run_checks=False), source_root=public)
+    manifest = v.parse_json(result.read_bytes(), seal=True)
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=public, text=True).strip()
+    assert manifest["source"]["git"]["head"] == head
+    assert result.parent == output and len(list(output.iterdir())) == 4
+    assert not (public / "artifacts/handoff").exists()
+    assert v.verify(result)["business_correctness"] == "UNKNOWN"
+    with pytest.raises(v.HandoffError, match="ROOT_UNCONFIRMED"):
+        builder.build(public, public / "artifacts/handoff", builder.Options(run_checks=False))
+    (real / "README.md").write_text("SYNTHETIC CHANGE AFTER PUBLIC COMMIT")
+    before = {p.name: p.read_bytes() for p in output.iterdir()}
+    with pytest.raises(v.HandoffError, match="PROJECTION_MISMATCH"):
+        builder.build(real, output, builder.Options(run_checks=False), source_root=public)
+    assert before == {p.name: p.read_bytes() for p in output.iterdir()}

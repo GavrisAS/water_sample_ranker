@@ -72,7 +72,7 @@ def input_inventory(root: Path) -> tuple[dict[str, Path], dict[str, Any]]:
 def protected(root: Path, active: dict[str, Path]) -> dict[Path, dict[str, Any]]:
     files = {
         p
-        for base in (root / "data", root / "gdis_loader", root / "templates")
+        for base in (root / "data", root / "templates", *root.glob("gdis_loader*"))
         if base.is_dir()
         for p in base.rglob("*")
         if p.is_file() and not p.is_symlink()
@@ -82,6 +82,7 @@ def protected(root: Path, active: dict[str, Path]) -> dict[Path, dict[str, Any]]
     files.update(p for p in active.values() if p.is_file())
     if (root / "config.toml").is_file():
         files.add(root / "config.toml")
+    files.update((root / "artifacts/private/customer").glob("*.xlsx"))
     return {p: stamp(p) for p in sorted(files)}
 
 
