@@ -136,7 +136,9 @@ def complementary_gate(pair: SamplePair, samples: tuple[Sample, ...]) -> SampleP
     s = pair.last
     if not s or not s.date or invalid(s, ("water", "chlorine")):
         return pair
-    if (s.chlorine is None) == (s.water_l_day is None):
+    if s.chlorine is not None and s.water_l_day is not None:
+        return replace(pair, previous=None, reason="GATE_SAME_SAMPLE")
+    if s.chlorine is None and s.water_l_day is None:
         return pair
     candidates = [
         p

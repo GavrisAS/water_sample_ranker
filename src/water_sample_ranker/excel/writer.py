@@ -33,7 +33,15 @@ def row_values(row: RankedWell, as_of: date) -> list[object]:
         *(row.separator_pair.evidence if row.separator_pair else ()),
         *gate_pair.evidence,
     )
-    locations = tuple(dict.fromkeys((*identity.evidence, *(e.location for e in evidence))))
+    locations = tuple(
+        dict.fromkeys(
+            (
+                *identity.evidence,
+                *(e.location for e in evidence),
+                *(loc for c in factual_criteria for loc in c.source_locations),
+            )
+        )
+    )
     origins = "; ".join(f"{Path(loc.file).name}::{loc.sheet}::{loc.cell}" for loc in locations)
     raw_plasts = "; ".join(
         dict.fromkeys(
@@ -99,6 +107,10 @@ def row_values(row: RankedWell, as_of: date) -> list[object]:
         f"{identity.stage.event_kind.value}; {stage_start(row) or 'дата неполная'}"
         if identity.stage
         else identity.reason,
+        row.separator_pair.last.water_l_day
+        if row.separator_pair and row.separator_pair.last
+        else None,
+        row.separator_pair.last.date if row.separator_pair and row.separator_pair.last else None,
     ]
 
 

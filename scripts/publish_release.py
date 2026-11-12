@@ -203,9 +203,9 @@ def main() -> None:
             f"Версия {tag}; source commit {commit}; reserved run {run_id}/{run_number}.\n"
             "Windows x64 onedir: распаковать целиком, запуск без Python/uv.\n"
             "Linux/Windows checks, fresh frozen GUI/CLI/template: PASS.\n"
-            "Синтетический frozen update-all: PASS. Баллы, ранги, TOP пусты.\n"
-            "UNKNOWN не заменяется FALSE/нулём; №7–9 — наблюдения/кандидаты.\n"
-            "Native Microsoft Excel и ручная Windows UX: NOT_RUN. Методика: PENDING.\n"
+            "Синтетический frozen update-all: PASS. Предварительные баллы и места доступны.\n"
+            "Сумма без перенормировки; №6 PASS ожидает правило без бонуса, №9 отложен.\n"
+            "Native Microsoft Excel и ручная Windows UX: NOT_RUN. Методика: PROVISIONAL.\n"
             "Производственные данные не включены. Synthetic checks не заменяют их квалификацию.\n"
             "Вопросы заказчику ведутся отдельно. Не прикладывайте приватные файлы к Issues.\n"
             "Проверяйте SHA-256 ZIP по соседним .sha256. Состав связан BUILD_EVIDENCE.json.\n",

@@ -241,3 +241,42 @@ def test_excel_rounding_contract_uses_half_up():
         2, 0.0000000000005, Truth.TRUE, normalized_score=1, weighted_contribution=0.0000000000005
     )
     assert confirmed_score((item,)) == 0.000000000001
+
+
+def test_choke_event_later_same_day_python_excel_parity(synthetic):
+    first = run_update(synthetic, target_field="береговое", as_of=date(2026, 11, 12))
+    assert first.output
+    b = load_workbook(first.output)
+    s = b["Настройки"]
+    for c, v in (
+        (7, datetime(2026, 8, 10, 1)),
+        (8, 10),
+        (9, 12),
+        (10, "Подтверждённое время и фактические диаметры в мм"),
+    ):
+        s.cell(56, c, v)
+    ev = Evaluator(b)
+    assert ev.cell("Критерии", "H20") == "TRUE"
+    b.save(first.output)
+    b.close()
+    synthetic.paths.update(
+        manual_input=str(first.output), output=str(synthetic.root / "same-day.xlsx")
+    )
+    repeated = run_update(synthetic, target_field="береговое", as_of=date(2026, 11, 12))
+    assert repeated.rows[0].criteria[6].state == Truth.TRUE
+    assert repeated.rows[0].criteria[6].weighted_contribution == 0.05
+    assert repeated.rows[0].criteria[6].source_date == datetime(2026, 8, 10, 1)
+    assert [loc.cell for loc in repeated.rows[0].criteria[6].source_locations] == [
+        "G56",
+        "H56",
+        "I56",
+        "J56",
+    ]
+    b = load_workbook(repeated.output)
+    ev = Evaluator(b)
+    assert ev.cell("Критерии", "H20") == "TRUE"
+    b["Настройки"]["G56"] = datetime(2026, 11, 12, 12)
+    assert ev.cell("Критерии", "H20") == "TRUE"  # Вся дата расчёта включена.
+    b["Настройки"]["G56"] = datetime(2026, 11, 13)
+    assert ev.cell("Критерии", "H20") == "UNKNOWN"
+    b.close()

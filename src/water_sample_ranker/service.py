@@ -26,10 +26,15 @@ from water_sample_ranker.config import OPTIONAL_ROLES, ROLES, AppConfig
 from water_sample_ranker.criteria.rules import evaluate, invalid, separator, water_rate
 from water_sample_ranker.criteria.rules import result as criterion_result
 from water_sample_ranker.diagnostics import attach_evidence, evidence_aggregates, freshness
-from water_sample_ranker.domain.models import RankedWell, Truth
+from water_sample_ranker.domain.models import RankedWell, SourceLocation, Truth
 from water_sample_ranker.domain.scoring import confirmed_score, coverage, unavailable_weight
 from water_sample_ranker.excel.compatibility import changed_parts, inspect_template
-from water_sample_ranker.excel.manual import identity_key, read_marks, read_operator_settings
+from water_sample_ranker.excel.manual import (
+    identity_key,
+    manual_sources,
+    read_marks,
+    read_operator_settings,
+)
 from water_sample_ranker.excel.writer import write
 from water_sample_ranker.matching.current_plast import resolve_current
 from water_sample_ranker.matching.matcher import complementary_gate, current_samples, select_pair
@@ -275,6 +280,12 @@ def run_validate(
             sorted(operator_path.glob("*.xlsx")) if operator_path.is_dir() else [operator_path]
         )
         report["operator_manifest"] = {str(p): fingerprint(p) for p in operator_files}
+        mark_origins = {}
+        sources = manual_sources(operator_path) if operator_path.is_dir() else {None: operator_path}
+        for source_field, source in sources.items():
+            for line, (key, values) in enumerate(read_marks(source).items(), 56):
+                if source_field is None or values[1] == source_field:
+                    mark_origins[key] = (source, line)
         report["operator_settings"] = operator_settings
         report["operator_marks_loaded"] = len(marks)
         settings_by_field = (
@@ -311,6 +322,13 @@ def run_validate(
                     pair,
                     "MANUAL_GTM_" + str(mark[5]),
                 )
+                source, line = mark_origins[identity_key(temp_row)]
+                c8 = replace(
+                    c8,
+                    raw_value=mark[5],
+                    source_date=None,
+                    source_locations=(SourceLocation(str(source), "Настройки", f"F{line}"),),
+                )
                 criteria = (*criteria[:7], c8, criteria[8])
                 when, before, after, basis = mark[6:10]
                 if (
@@ -322,9 +340,22 @@ def run_validate(
                     and basis
                 ):
                     event_day = when.date() if isinstance(when, datetime) else when
-                    if pair.last.date.date() < event_day <= day and after > before > 0:
+                    event_time = (
+                        when
+                        if isinstance(when, datetime)
+                        else datetime.combine(when, datetime.min.time())
+                    )
+                    if event_time > pair.last.date and event_day <= day and after > before > 0:
                         c7 = criterion_result(
                             7, Truth.TRUE, pair, "MANUAL_CONFIRMED_DIAMETER_INCREASE_AFTER_SAMPLE"
+                        )
+                        c7 = replace(
+                            c7,
+                            source_date=event_time,
+                            source_locations=tuple(
+                                SourceLocation(str(source), "Настройки", f"{col}{line}")
+                                for col in "GHIJ"
+                            ),
                         )
                         criteria = (*criteria[:6], c7, *criteria[7:])
             factual_criteria = criteria

@@ -5,7 +5,7 @@ import json
 import shutil
 import subprocess
 import tempfile
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -79,6 +79,13 @@ def qualify(directory: Path) -> dict:
     )
     s.cell(row, 6, "Да")
     s["D28"] = 0.23
+    for col, value in (
+        (7, datetime(2042, 8, 12, 1)),
+        (8, 10),
+        (9, 12),
+        (10, "Подтверждённые время события и диаметры в мм"),
+    ):
+        s.cell(row, col, value)
     edited = directory / "edited.xlsx"
     b.save(edited)
     b.close()
@@ -86,8 +93,17 @@ def qualify(directory: Path) -> dict:
     b = load_workbook(target, data_only=True)
     actual = {b["Рейтинг"].cell(r, 2).value: b["Рейтинг"].cell(r, 5).value for r in range(4, 7)}
     original = dict(originals[0][1])
-    assert abs(actual["DEMO-ALFA"] - original["DEMO-ALFA"] - 0.23) < 1e-11
+    assert abs(actual["DEMO-ALFA"] - original["DEMO-ALFA"] - 0.23 - 0.05) < 1e-11
     assert abs(actual["DEMO-BETA"] - original["DEMO-BETA"]) < 1e-11
+    b.close()
+    b = load_workbook(edited)
+    b["Настройки"].cell(row, 7, datetime(2042, 11, 6))
+    future = directory / "future.xlsx"
+    b.save(future)
+    b.close()
+    b = load_workbook(recalc(future, "future-recalculated"), data_only=True)
+    actual = {b["Рейтинг"].cell(r, 2).value: b["Рейтинг"].cell(r, 5).value for r in range(4, 7)}
+    assert abs(actual["DEMO-ALFA"] - original["DEMO-ALFA"] - 0.23) < 1e-11
     b.close()
     return {
         "status": "PASS",
@@ -97,6 +113,7 @@ def qualify(directory: Path) -> dict:
         "manual_gtm_and_weight_without_loader": "PASS",
         "python_formula_scores_ranks": "PASS",
         "formula_errors": 0,
+        "same_day_and_future_diameter_event": "PASS",
         "native_excel": "NOT_RUN",
     }
 

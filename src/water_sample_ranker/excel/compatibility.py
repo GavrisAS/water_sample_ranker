@@ -39,7 +39,7 @@ def inspect_template(path: Path) -> dict[str, object]:
             raise ValueError("TEMPLATE_TABLES_INVALID")
         if (
             tables["tblCalculation"] != f"A3:AA{CAPACITY + 3}"
-            or tables["tblRating"] != f"A3:AR{CAPACITY + 3}"
+            or tables["tblRating"] != f"A3:AT{CAPACITY + 3}"
         ):
             raise ValueError("TEMPLATE_CAPACITY_INVALID")
         data_header = next(cells for row, cells in b.rows("Данные", max_row=6) if row == 6)

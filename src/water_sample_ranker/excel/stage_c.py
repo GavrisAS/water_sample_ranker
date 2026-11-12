@@ -97,6 +97,7 @@ def adapt(book) -> None:
         "Начало актуальной стадии",
         "Опорная дата давности",
         "Дата фактического увеличения диаметра",
+        "Дата дебита для сепаратора",
     ):
         data.cell(7, ALL_DATA_HEADERS.index(h) + 1).number_format = "dd.mm.yyyy hh:mm"
     data.data_validations = DataValidationList()
@@ -146,10 +147,12 @@ def adapt(book) -> None:
         *[f"Вклад {i}" for i in range(1, 9)],
         *[f"Основание {i}" for i in range(1, 9)],
         *[f"Вес {i}" for i in range(1, 9)],
+        "Qв для сепаратора л/сут",
+        "Дата дебита для сепаратора",
     ]
     for c, h in enumerate(rating_headers, 1):
         rating.cell(3, c, h)
-    rating.tables["tblRating"].ref = f"A3:AR{CAPACITY + 3}"
+    rating.tables["tblRating"].ref = f"A3:AT{CAPACITY + 3}"
     rating.tables["tblRating"].tableColumns = []
     rating.tables["tblRating"]._initialise_columns()
     for c, h in zip(rating.tables["tblRating"].tableColumns, rating_headers, strict=True):
@@ -317,6 +320,10 @@ def adapt(book) -> None:
                 f'=IFERROR(INDEX(Критерии!${source}$20:${source}${CAPACITY + 19},{position}),"")',
             )
             rating.cell(r, 36 + i, f'=IF(B{r}="","",Настройки!$D${20 + i})')
+        for col, h in ((45, "Qв для сепаратора л/сут"), (46, "Дата дебита для сепаратора")):
+            lookup = f"INDEX(tblData[{h}],{position})"
+            rating.cell(r, col, f'=IFERROR(IF(ISBLANK({lookup}),"",{lookup}),"")')
+        rating.cell(r, 46).number_format = "dd.mm.yyyy hh:mm"
     rating["E3"] = "Предварительный балл"
     for row in range(20, 51):
         rating.cell(row, 11).value = None

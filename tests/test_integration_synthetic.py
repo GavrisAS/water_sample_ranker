@@ -51,7 +51,7 @@ def test_validate_does_not_write_and_update_is_independent_copy(synthetic: AppCo
                 assert a.read(name) == b.read(name)
     book = load_workbook(result.output, data_only=False, keep_links=False)
     assert book.sheetnames == list(SHEETS)
-    assert book["Данные"].tables["tblData"].ref == "A6:BN110"
+    assert book["Данные"].tables["tblData"].ref == "A6:BP110"
     assert tuple(c.value for c in book["Данные"][6])[: len(DATA_HEADERS)] == DATA_HEADERS
     headers = {c.value: c.column for c in book["Данные"][6]}
     assert book["Данные"].cell(110, headers["Скважина"]).value == "104"
