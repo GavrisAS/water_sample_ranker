@@ -355,6 +355,14 @@ def adapt(book) -> None:
         s.protection.sheet = True
         s.protection.autoFilter = False
         s.protection.sort = False
+    # Стиль входных ячеек ГДИС был unlocked; факты нового загрузчика защищены.
+    for cell in data[7]:
+        cell.protection = Protection(locked=True)
+    for sheet in book:
+        for row in sheet:
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.protection = Protection(locked=True)
     notes = (
         ("Статус", STATUS),
         ("Фонд", "Только дающие газ и остановленные в отчётном периоде; все строки сохраняются."),

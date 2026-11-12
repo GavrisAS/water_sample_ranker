@@ -16,7 +16,7 @@ from zipfile import ZipFile
 from scripts import verify_handoff as policy
 
 TEMPLATE = "templates/Water_Sample_Ranking_Calculator.xlsx"
-TEMPLATE_SHA = "20ac8b94dbcb8b32ef7edac1d4eb6640531393f654e4fbe58024843449266557"
+TEMPLATE_SHA = "c57e5fa79d48166f25650d2d95388252f5795a7e4060de270ceafbf37727c888"
 PRIVATE_DOCUMENTS = {
     "SPEC.md",
     "OPEN_QUESTIONS.md",
@@ -69,6 +69,7 @@ def check_template(data: bytes) -> None:
     policy.scan_xlsx(data)
     if policy.sha(data) not in {
         TEMPLATE_SHA,
+        "20ac8b94dbcb8b32ef7edac1d4eb6640531393f654e4fbe58024843449266557",
         "b6e54a801bd70a2ef4184e2f0ac77d56a214dc801592f00f178b43ed3cb84f66",
         "9f067b9a891640734c8f830fccddc35af5250735d875a83f05967de2cde4fc34",
     }:

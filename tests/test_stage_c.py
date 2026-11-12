@@ -280,3 +280,23 @@ def test_choke_event_later_same_day_python_excel_parity(synthetic):
     b["Настройки"]["G56"] = datetime(2026, 11, 13)
     assert ev.cell("Критерии", "H20") == "UNKNOWN"
     b.close()
+
+
+def test_export_all_formulas_and_facts_locked_operator_inputs_unlocked(synthetic):
+    result = run_update(synthetic, target_field="пырейное", as_of=date(2026, 11, 12))
+    assert result.output
+    b = load_workbook(result.output)
+    for sheet in b:
+        for row in sheet:
+            for cell in row:
+                if cell.data_type == "f":
+                    assert cell.protection.locked, (sheet.title, cell.coordinate)
+    for row in b["Данные"].iter_rows(min_row=7):
+        for cell in row:
+            assert cell.protection.locked, cell.coordinate
+    settings = b["Настройки"]
+    for coord in ("B7", "B13", "D21", "I21", "F56", "G56", "H56", "I56", "J56"):
+        assert settings[coord].protection.locked is False
+    for coord in ("A56", "B56", "C56", "D56", "E56"):
+        assert settings[coord].protection.locked
+    b.close()
