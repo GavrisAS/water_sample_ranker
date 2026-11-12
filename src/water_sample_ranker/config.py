@@ -47,7 +47,11 @@ class CriteriaConfig:
 
     @property
     def policy_status(self) -> str:
-        return "LITERAL_V0_2" if self == CriteriaConfig() else "CUSTOM_THRESHOLDS_PENDING_APPROVAL"
+        return (
+            "CUSTOMER_STAGE_C_PROVISIONAL"
+            if self == CriteriaConfig()
+            else "CUSTOM_THRESHOLDS_PENDING_APPROVAL"
+        )
 
 
 @dataclass(slots=True)

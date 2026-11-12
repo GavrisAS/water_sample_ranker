@@ -280,8 +280,13 @@ def test_same_pad_is_candidate_with_both_cl_dates_not_truth():
     assert len(v.neighbors) == 1 and v.neighbors[0].neighbor == "DEMO-B"
     assert v.neighbors[0].target_date == v.neighbors[0].neighbor_date
     assert v.neighbors[0].target_chlorine.location.cell == "Z2"
-    assert all(c.state == Truth.UNKNOWN for r in rows for c in r.criteria[6:])
-    assert all(c.normalized_score is None for r in rows for c in r.criteria)
+    assert all(c.state == Truth.UNKNOWN for r in rows for c in r.criteria[6:8])
+    assert all(
+        c.normalized_score is None
+        for r in rows
+        for c in r.criteria
+        if c.state in {"UNKNOWN", "PENDING_CUSTOMER_RULE", "DISABLED"}
+    )
     assert tuple(c.weight for c in rows[0].criteria) == WEIGHTS
 
 

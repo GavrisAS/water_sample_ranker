@@ -179,8 +179,6 @@ class FundWell:
             FundCategory.PRODUCING,
             FundCategory.PRODUCING_GAS,
             FundCategory.STOPPED_IN_REPORTING_MONTH,
-            FundCategory.INACTIVE_CURRENT_YEAR,
-            FundCategory.INACTIVE_PREVIOUS_YEARS,
         }
 
 
@@ -276,6 +274,8 @@ class Truth(StrEnum):
     FALSE = "FALSE"
     UNKNOWN = "UNKNOWN"
     NOT_APPLICABLE = "NOT_APPLICABLE"
+    DISABLED = "DISABLED"
+    PENDING_CUSTOMER_RULE = "PENDING_CUSTOMER_RULE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,7 +328,7 @@ class CriterionResult:
     weighted_contribution: float | None = None
     source_locations: tuple[SourceLocation, ...] = ()
     diagnostic_reason: str = ""
-    policy_version: str = "water-v0.2-stage-A"
+    policy_version: str = "water-stage-C-provisional"
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,3 +354,6 @@ class RankedWell:
     coverage: float | None
     unknown_fraction: float
     diagnostic_evidence: tuple[CriterionEvidence, ...] = ()
+    factual_criteria: tuple[CriterionResult, ...] = ()
+    gate_pair: SamplePair | None = None
+    separator_pair: SamplePair | None = None

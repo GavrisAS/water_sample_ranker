@@ -432,7 +432,7 @@ def review_report(
         "",
         "1. reports/gates.json и логи: новые команды/exit code/timeout.",
         "2. reports/DOMAIN_AUDIT.md и coverage.json: synthetic отдельно от production.",
-        "3. reports/excel_structure.json: структура, ёмкость и отсутствие финального score.",
+        "3. reports/excel_structure.json: структура, ёмкость и предварительный score.",
         "4. CODE_MAP.md и audit/src: независимое чтение реализации и тестов.",
         "5. audit/docs/UX_PARITY_GDIS.md: историческая матрица, не новое ручное принятие.",
         "",
@@ -456,11 +456,11 @@ def review_report(
             "",
             "## Область доказательств и ограничения",
             "",
-            "Этап B сохраняет фонд/lifecycle/plast, пары ЛХА, №1–6 и сепаратор; "
-            "добавляет typed ГСС, timeline и кустовые candidates. №7–9 UNKNOWN; UNKNOWN не "
+            "Stage C: действующий фонд, lifecycle/plast, актуальные пары и сепаратор. "
+            "№6 ожидает второе правило; №8 ручной ГТМ, №9 отложен. UNKNOWN не "
             "равно нулевому баллу.",
             "Stage A.1 исправляет валидацию измерений и схемы, сохраняет методику. Критерий "
-            "№1, итоговое агрегирование и правила UNKNOWN требуют согласования заказчика.",
+            "№1 использует предварительные месяцы; сумма без перенормировки доступна.",
             "Synthetic boundary tests и headless widgets не доказывают native "
             "Windows/Excel UX. Windows/Excel/visual "
             "review: PENDING, gates NOT_RUN.",
@@ -485,6 +485,19 @@ def review_report(
         ]
     )
     return "\n".join(rows) + "\n"
+
+
+def share_safe_production(result: dict[str, Any]) -> dict[str, Any]:
+    """В handoff только статус свежего запуска и технические хеши, без промысловых чисел."""
+    return {
+        **{
+            k: result[k]
+            for k in ("status", "fresh_execution", "reason", "source_fingerprints")
+            if k in result
+        },
+        "scope": "PRIVATE_NUMERICAL_QUALIFICATION_WITHHELD",
+        "production_rows_and_numbers_included": False,
+    }
 
 
 def build(root: Path, output: Path, options: Options, *, source_root: Path | None = None) -> Path:
@@ -527,6 +540,7 @@ def build(root: Path, output: Path, options: Options, *, source_root: Path | Non
         else "TEMPLATE_BINARY_EXCLUDED",
     }
     history = evidence.historical(root)
+    history.pop("field_counts", None)
     acceptance = root / "docs/ACCEPTANCE.md"
     if acceptance.is_file():
         claim = re.search(r"pytest\s*—\s*(\d+) passed", acceptance.read_text(encoding="utf-8"))
@@ -566,6 +580,7 @@ def build(root: Path, output: Path, options: Options, *, source_root: Path | Non
                     "fresh_execution": True,
                     "reason": "NO_COMPLETE_AGGREGATE",
                 }
+    prod = share_safe_production(prod)
     if prod.get("source_fingerprints"):
         inputs["fresh_production_roles"] = prod["source_fingerprints"]
     gates["production_validation"] = {
@@ -596,24 +611,27 @@ def build(root: Path, output: Path, options: Options, *, source_root: Path | Non
         "test_measurement_semantics.py, test_lha_quality.py, test_lifecycle_water.py, "
         "test_formula_golden.py; "
         "статусы и фактический pytest stdout — gates.json/logs.\n\n"
-        "№1: дни/месяцы, без утверждённой score-функции. №2/3: строгие границы "
+        "№1: предварительно полные календарные месяцы / 12, насыщение после года. "
+        "№2/3: строгие границы "
         "Cl 2000/8000, минерализация 22000 и интервал >7 суток. №4/5: генезис "
-        "AB/cache/error и scoped исключение №23. №6: Qв>1000 л/сут и Cl>2000. "
-        "ПК1: сепаратор при Qв>=6.912 м³/сут. Методика не менялась.\n\n"
+        "AB/cache/error и scoped исключение №23. "
+        "№6: входное условие Qв>1000 и Cl>2000; PASS без бонуса до второго правила. "
+        "ПК1: сепаратор при Qв>=6.912 м³/сут. Предварительная сумма без перенормировки.\n\n"
         "A.1: отрицательные Cl/M/Qв имеют INVALID_MEASUREMENT с исходным evidence; "
         "зависимые решения UNKNOWN, ноль допустим. AB27 требует literal Заключение; "
         "drift блокирует источник. FRESHNESS_POLICY_PENDING не задаёт срок годности.\n\n"
-        "№7–9: Truth UNKNOWN; typed ГСС/timeline/кустовые candidates реализованы. "
-        "Интерпретация — METHODOLOGY_PENDING; недостающий файл — SOURCE_UNAVAILABLE. "
+        "№7: фактический диаметр; №8: ручной ГТМ; №9 отложен, геоданные не читаются. "
+        "Интерпретация — METHODOLOGY_PROVISIONAL; недостающий файл — SOURCE_UNAVAILABLE. "
         "NOT_IMPLEMENTED относится только к отсутствующей функции, NOT_RUN — к "
         "непроведённой проверке. Числовой рейтинг не утверждён.\n\n"
         f"Свежая production проверка: {prod['status']}. "
-        "Данные в coverage.json — агрегаты явного opt-in запуска; без флага численность "
-        "фонда и matching не объявляются проверенными.\n\n"
-        "Фонд: C/D/G/H, без J. При opt-in численность/категории/сверки/двойной "
+        "В coverage.json — только статус явного opt-in запуска и технические хеши; численность "
+        "фонда и построчные результаты не раскрываются.\n\n"
+        "Фонд: только действующие категории по смысловым заголовкам. "
+        "При opt-in численность/категории/сверки/двойной "
         "счёт/этапы и TRUE/FALSE/UNKNOWN/N/A вычисляются из свежего service "
-        "result, без зашитых контрольных чисел. Исходные аномалии остаются в "
-        "diagnostic_counts.\n"
+        "result, без зашитых контрольных чисел. Промысловые числа остаются в приватном "
+        "отчёте.\n"
     )
     context = {"schema_version": policy.SCHEMA, "handoff_id": hid, "source": source}
     payloads["audit/CONTEXT.json"] = policy.canonical(context)

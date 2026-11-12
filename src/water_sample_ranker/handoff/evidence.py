@@ -72,7 +72,12 @@ def input_inventory(root: Path) -> tuple[dict[str, Path], dict[str, Any]]:
 def protected(root: Path, active: dict[str, Path]) -> dict[Path, dict[str, Any]]:
     files = {
         p
-        for base in (root / "data", root / "templates", *root.glob("gdis_loader*"))
+        for base in (
+            root / "data",
+            root / "templates",
+            root / "artifacts/Ответы",
+            *root.glob("gdis_loader*"),
+        )
         if base.is_dir()
         for p in base.rglob("*")
         if p.is_file() and not p.is_symlink()
@@ -447,7 +452,14 @@ def aggregate(result: Any) -> dict[str, Any]:
             "criteria": {
                 str(n): {
                     state: sum(r.criteria[n - 1].state.value == state for r in selected)
-                    for state in ("TRUE", "FALSE", "UNKNOWN", "NOT_APPLICABLE")
+                    for state in (
+                        "TRUE",
+                        "FALSE",
+                        "UNKNOWN",
+                        "NOT_APPLICABLE",
+                        "DISABLED",
+                        "PENDING_CUSTOMER_RULE",
+                    )
                 }
                 for n in range(1, 10)
             },
@@ -526,9 +538,7 @@ def production(root: Path, enabled: bool) -> dict[str, Any]:
                 results[0].report, tuple(r for result in results for r in result.rows)
             )
             summary = aggregate(checked)
-            if any(
-                f["numeric_scores"] or f["duplicate_identities"] for f in summary["fields"].values()
-            ):
+            if any(f["duplicate_identities"] for f in summary["fields"].values()):
                 raise policy.HandoffError("SCORE_OR_IDENTITY_INVARIANT")
             for result in results:
                 field = result.report["selected_field"]
@@ -592,7 +602,14 @@ def verify_output_aggregates(path: Path, expected: dict[str, Any], field: str) -
             for i in range(1, 10):
                 cell = cells[columns[f"Критерий {i}"]]
                 state = "".join(t.text or "" for t in cell.iter(ns + "t"))
-                if state not in {"TRUE", "FALSE", "UNKNOWN", "NOT_APPLICABLE"}:
+                if state not in {
+                    "TRUE",
+                    "FALSE",
+                    "UNKNOWN",
+                    "NOT_APPLICABLE",
+                    "DISABLED",
+                    "PENDING_CUSTOMER_RULE",
+                }:
                     raise policy.HandoffError("OUTPUT_STATE_INVALID")
                 counts[str(i)][state] += 1
         if actual_rows != expected["fields"][field]["rows"]:
@@ -609,12 +626,12 @@ def verify_output_aggregates(path: Path, expected: dict[str, Any], field: str) -
                 match = re.fullmatch(r"([A-Z]+)(\d+)", coord)
                 if match and match.group(1) in cols and int(match.group(2)) >= 4:
                     formula = cell.find(ns + "f")
-                    if formula is None or formula.text != '""':
-                        raise policy.HandoffError("UNAPPROVED_OUTPUT_SCORE")
+                    if formula is None or not formula.text or formula.text == '""':
+                        raise policy.HandoffError("PRELIMINARY_FORMULA_MISSING")
     return {
         "status": "PASS",
         "physical_rows": actual_rows,
         "criterion_counts_match": True,
-        "score_rank_blank_formulas": True,
+        "preliminary_score_rank_formulas": True,
         "scope": "STRUCTURE_NOT_EXCEL_RECALCULATION",
     }

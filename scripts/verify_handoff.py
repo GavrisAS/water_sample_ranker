@@ -470,6 +470,15 @@ def scan_xlsx(data: bytes) -> None:
                             "lastModifiedBy",
                         } and e.text not in {None, "Water Sample Ranker"}:
                             raise HandoffError("XLSX_PERSONAL_METADATA")
+                if info.filename == "xl/worksheets/sheet2.xml":
+                    for row in root.iter(ns + "row"):
+                        if int(row.attrib["r"]) >= 56 and any(
+                            c.find(ns + "v") is not None
+                            or c.find(ns + "is") is not None
+                            or c.find(ns + "f") is not None
+                            for c in row
+                        ):
+                            raise HandoffError("XLSX_OPERATOR_DATA_ROWS")
                 if info.filename == "xl/worksheets/sheet3.xml":
                     for row in root.iter(ns + "row"):
                         if int(row.attrib["r"]) >= 7 and any(
@@ -492,7 +501,10 @@ def scan_xlsx(data: bytes) -> None:
                                     c.find(ns + "v") is not None or c.find(ns + "is") is not None
                                 ):
                                     # Единственная допустимая подпись helper-диаграммы.
-                                    if c.get("r") != "K20" or "sheet6" not in info.filename:
+                                    if (
+                                        c.get("r") not in {"BA20", "K20"}
+                                        or "sheet6" not in info.filename
+                                    ):
                                         raise HandoffError("XLSX_HIDDEN_OR_LITERAL_ROWS")
     except (OSError, ET.ParseError, KeyError, ValueError) as error:
         if isinstance(error, HandoffError):

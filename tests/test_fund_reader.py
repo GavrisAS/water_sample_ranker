@@ -54,18 +54,18 @@ def test_fund_chooses_latest_non_rspn_sheet_and_all_categories(tmp_path: Path) -
 
     assert result.sheet_name == "02.02.2025"
     assert result.fund_date is not None
-    assert len(result.wells) == 7
+    assert len(result.wells) == 3
     assert {well.source_category for well in result.wells} == {
         FundCategory.PRODUCING_GAS,
         FundCategory.STOPPED_IN_REPORTING_MONTH,
-        FundCategory.INACTIVE_CURRENT_YEAR,
-        FundCategory.INACTIVE_PREVIOUS_YEARS,
     }
     assert result.wells[0].raw_display == "011"
     assert result.wells[0].base_well_id == "11"
     assert result.wells[0].object_plast_hint == "ПК1"
     assert all(well.is_rating_eligible for well in result.wells[:3])
-    assert all(well.is_rating_eligible for well in result.wells[3:])
+    assert not replace(
+        result.wells[0], source_category=FundCategory.INACTIVE_CURRENT_YEAR
+    ).is_rating_eligible
     assert replace(result.wells[0], source_category=FundCategory.PRODUCING).is_rating_eligible
     assert not any(well.raw_display == "018" for well in result.wells)
     assert not any(issue.code == "FUND_COUNT_MISMATCH" for issue in result.issues)
@@ -73,7 +73,7 @@ def test_fund_chooses_latest_non_rspn_sheet_and_all_categories(tmp_path: Path) -
     assert j_issue.severity is IssueSeverity.INFO
     assert j_issue.message == (
         "Колонка J (освоение/ожидание освоения) не включена в фонд рейтингования: "
-        "по исходному README рейтингованию подлежит действующий + бездействующий фонд."
+        "по исходному README рейтингованию подлежит только действующий эксплуатационный фонд."
     )
     assert j_issue.locations == (SourceLocation(str(path.resolve()), "02.02.2025", "J12"),)
 

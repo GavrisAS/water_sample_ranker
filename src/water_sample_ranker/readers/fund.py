@@ -45,6 +45,32 @@ _CATEGORIES: tuple[tuple[int, FundCategory], ...] = (
 )
 
 
+def category_columns(worksheet: Any) -> tuple[tuple[int, FundCategory], ...]:
+    """Разрешить известную схему по заголовкам, не по букве итоговой колонки."""
+    found = {}
+    for col in range(1, worksheet.max_column + 1):
+        text = " ".join(str(worksheet.cell(r, col).value or "").casefold() for r in range(4, 10))
+        if "дающие газ" in text:
+            found[FundCategory.PRODUCING_GAS] = col
+        elif "остановленные" in text and "отчетном" in text:
+            found[FundCategory.STOPPED_IN_REPORTING_MONTH] = col
+        elif "бездейств" in text and "текущего" in text:
+            found[FundCategory.INACTIVE_CURRENT_YEAR] = col
+        elif "бездейств" in text and "прошлых" in text:
+            found[FundCategory.INACTIVE_PREVIOUS_YEARS] = col
+    if found:
+        if not all(
+            c in found
+            for c in (FundCategory.PRODUCING_GAS, FundCategory.STOPPED_IN_REPORTING_MONTH)
+        ):
+            raise ValueError("FUND_SCHEMA_AMBIGUOUS: категории действующего фонда")
+        return tuple((col, c) for c, col in found.items())
+    # Старый компактный обменный формат без многострочной шапки (синтетические входы).
+    if any(worksheet.cell(r, c).value for r in range(4, 10) for c in range(3, 9)):
+        raise ValueError("FUND_SCHEMA_UNRECOGNIZED")
+    return _CATEGORIES
+
+
 def _sheet_date(title: str) -> date | None:
     if not DATE_SHEET_RE.fullmatch(title.strip()):
         return None
@@ -210,6 +236,7 @@ def read_fund(path: Path, as_of: date | None = None) -> FundParseResult:
                 )
             )
 
+        categories = category_columns(worksheet)
         wells: list[FundWell] = []
         current_field = ""
         ignored_j_reported = False
@@ -226,10 +253,10 @@ def read_fund(path: Path, as_of: date | None = None) -> FundParseResult:
                 current_field = field_value
             counts = {
                 column: _expected_count(worksheet.cell(row_number, column).value)
-                for column, _ in _CATEGORIES
+                for column, _ in categories
             }
             list_values = {
-                column: worksheet.cell(row_number + 1, column).value for column, _ in _CATEGORIES
+                column: worksheet.cell(row_number + 1, column).value for column, _ in categories
             }
             ignored_j = parse_well_list_cell(worksheet.cell(row_number + 1, 10).value)
             if ignored_j and not ignored_j_reported:
@@ -240,7 +267,7 @@ def read_fund(path: Path, as_of: date | None = None) -> FundParseResult:
                         message=(
                             "Колонка J (освоение/ожидание освоения) не включена в фонд "
                             "рейтингования: по исходному README рейтингованию подлежит "
-                            "действующий + бездействующий фонд."
+                            "только действующий эксплуатационный фонд."
                         ),
                         source="fund",
                         coordinate=coordinate(row_number + 1, 9),
@@ -263,7 +290,7 @@ def read_fund(path: Path, as_of: date | None = None) -> FundParseResult:
                     )
                 )
             object_hint = extract_exact_plast_hint(object_name)
-            for column, category in _CATEGORIES:
+            for column, category in categories:
                 list_value = list_values[column]
                 expected = counts[column]
                 list_cell = coordinate(row_number + 1, column - 1)
@@ -380,7 +407,10 @@ def read_fund(path: Path, as_of: date | None = None) -> FundParseResult:
                     )
                 )
         return FundParseResult(
-            attach_active_fund_branches(tuple(wells)), fund_date, worksheet.title, tuple(issues)
+            attach_active_fund_branches(tuple(w for w in wells if w.is_rating_eligible)),
+            fund_date,
+            worksheet.title,
+            tuple(issues),
         )
     finally:
         workbook.close()

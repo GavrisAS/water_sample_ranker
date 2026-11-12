@@ -67,8 +67,12 @@ def test_history_and_plan_intervals_keep_identity_and_unknown(tmp_path, raw, exp
     assert view.events[0].locations == (LOC,)
     row, _ = ranked("DEMO-A", 1800)
     row = replace(row, diagnostic_evidence=(view,))
-    assert all(c.state == "UNKNOWN" for c in row.criteria[6:])
-    assert all(c.normalized_score is None for c in row.criteria)
+    assert all(c.state == "UNKNOWN" for c in row.criteria[6:8])
+    assert all(
+        c.normalized_score is None
+        for c in row.criteria
+        if c.state in {"UNKNOWN", "PENDING_CUSTOMER_RULE", "DISABLED"}
+    )
     private = json.loads(json.dumps(asdict(view), default=str))
     assert private["events"][0]["cutoff_relation"] == expected
     aggregate = evidence_aggregates((row,))

@@ -12,7 +12,7 @@ from water_sample_ranker.config import TEMPLATE, AppConfig, save_config
 from water_sample_ranker.service import run_update_all
 
 
-def generate(destination: Path) -> AppConfig:
+def generate(destination: Path, *, year: int = 2026, extended: bool = False) -> AppConfig:
     destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=False)
     data = destination / "data"
@@ -52,10 +52,11 @@ def generate(destination: Path) -> AppConfig:
     sample_row = 2
     for index, (field, sheet) in enumerate(fields):
         n = 11 + index * 2
-        for col, value in {1: field, 2: field + " (ПК1)", 3: 1, 7: 1, 9: 1, 11: 2}.items():
+        for col, value in {1: field, 2: field + " (ПК1)", 3: 2, 7: 0, 9: 0, 11: 2}.items():
             fs.cell(n, col, value)
-        fs.cell(n + 1, 3, "DEMO-ALFA")
-        fs.cell(n + 1, 7, "DEMO-BETA")
+        fs.cell(n + 1, 3, "DEMO-ALFA, DEMO-BETA" + (", DEMO-GAMMA" if extended else ""))
+        fs.cell(n, 3, 3 if extended else 2)
+        fs.cell(n + 1, 7, None)
         hs = history.create_sheet(sheet)
         names = (
             "№ куста",
@@ -74,7 +75,14 @@ def generate(destination: Path) -> AppConfig:
         )
         for col, name in enumerate(names, 1):
             hs.cell(2, col, name)
-        for row, (well, cl) in enumerate((("DEMO-ALFA", 1000), ("DEMO-BETA", 4000)), 3):
+        for row, (well, cl) in enumerate(
+            (
+                ("DEMO-ALFA", 1000),
+                ("DEMO-BETA", 4000),
+                *((("DEMO-GAMMA", None),) if extended else ()),
+            ),
+            3,
+        ):
             for col, value in {
                 1: 1,
                 2: well,
@@ -85,6 +93,8 @@ def generate(destination: Path) -> AppConfig:
                 10: "ПК1",
             }.items():
                 hs.cell(row, col, value)
+            if well == "DEMO-GAMMA":
+                continue
             for day in (1, 12):
                 stamp = datetime(2026, 8, day)
                 for col, value in {
@@ -136,13 +146,17 @@ def generate(destination: Path) -> AppConfig:
         ("lha", lha),
         ("monitoring", monitor),
     ):
+        if year != 2026:
+            for sheet in w:
+                if sheet.title == "01.10.2026":
+                    sheet.title = f"01.10.{year}"
+                for row in sheet:
+                    for cell in row:
+                        if isinstance(cell.value, datetime):
+                            cell.value = cell.value.replace(year=cell.value.year + year - 2026)
         p = data / f"synthetic-{role}.xlsx"
         w.save(p)
         w.close()
-        paths[role] = str(p.relative_to(destination))
-    for role, payload in synthetic_optional().items():
-        p = data / f"synthetic-{role}.json"
-        p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         paths[role] = str(p.relative_to(destination))
     config = AppConfig(destination, paths)
     save_config(config)
@@ -178,8 +192,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output-dir", type=Path, required=True)
     args = p.parse_args()
-    config = generate(args.output_dir)
-    results = run_update_all(config, as_of=date(2026, 11, 5), output_dir=config.root / "outputs")
+    config = generate(args.output_dir, year=2042, extended=True)
+    results = run_update_all(config, as_of=date(2042, 11, 5), output_dir=config.root / "outputs")
     print(
         json.dumps(
             {

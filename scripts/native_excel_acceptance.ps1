@@ -35,16 +35,37 @@ try {
     if (($Names -join '|') -ne 'README|Настройки|Данные|Критерии|Расчет|Рейтинг') { throw "Sheet schema mismatch" }
     $TableCount = 0
     foreach ($Sheet in $Book.Worksheets) { $TableCount += $Sheet.ListObjects.Count }
-    if ($TableCount -ne 4) { throw "Table count mismatch" }
+    if ($TableCount -ne 5) { throw "Table count mismatch" }
     $Rows = $Excel.WorksheetFunction.CountA($Book.Worksheets.Item('Данные').ListObjects.Item('tblData').DataBodyRange.Columns.Item(1))
     if ($Rows -ne $ExpectedRows) { throw "Data rows mismatch: $Rows" }
     $Excel.Calculation = -4105 # xlCalculationAutomatic
     $Excel.CalculateFullRebuild()
-    foreach ($Check in @(@('Расчет','J4:K1003'), @('Рейтинг','A4:A1003'), @('Рейтинг','E4:E1003'))) {
-        $Values = $Book.Worksheets.Item($Check[0]).Range($Check[1]).Value2
-        foreach ($Value in $Values) {
-            if ($null -ne $Value -and "$Value" -ne '') { throw "Unapproved numeric score/rank" }
+    if ($ExpectedRows -gt 0) {
+        $Score = $Book.Worksheets.Item('Расчет').Range('J4').Value2
+        $Rank = $Book.Worksheets.Item('Расчет').Range('K4').Value2
+        if ($null -eq $Score -or $Rank -lt 1) { throw "Preliminary score/rank missing" }
+        $Settings = $Book.Worksheets.Item('Настройки')
+        $Operators = $Settings.ListObjects.Item('tblOperator').DataBodyRange
+        $Field = $Settings.Range('B8').Value2
+        $Well = $Book.Worksheets.Item('Данные').Range('A7').Value2
+        $OperatorRow = $null
+        for ($r=1; $r -le $Operators.Rows.Count; $r++) {
+            if ($Operators.Cells.Item($r,2).Value2 -eq $Field -and $Operators.Cells.Item($r,3).Value2 -eq $Well) {
+                $OperatorRow = $r; break
+            }
         }
+        if ($null -eq $OperatorRow) { throw "Manual identity missing" }
+        $Operators.Cells.Item($OperatorRow,6).Value2 = 'Нет'
+        $Excel.CalculateFullRebuild()
+        $BaseScore = $Book.Worksheets.Item('Расчет').Range('J4').Value2
+        $Settings.Range('D28').Value2 = 0.23
+        $Operators.Cells.Item($OperatorRow,6).Value2 = 'Да'
+        $Excel.CalculateFullRebuild()
+        $EditedScore = $Book.Worksheets.Item('Расчет').Range('J4').Value2
+        if ([Math]::Abs($EditedScore - $BaseScore - 0.23) -gt 0.000000001) {
+            throw "Manual GTM/weight recalculation mismatch"
+        }
+        $Result.manual_gtm_weight_formula_check = "PASS"
     }
     foreach ($Sheet in $Book.Worksheets) {
         foreach ($Formula in $Sheet.UsedRange.Formula) {

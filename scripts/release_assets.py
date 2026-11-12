@@ -203,7 +203,7 @@ def verify_release_assets(
                 "synthetic_frozen_update_all",
                 "privacy_source_history",
                 "privacy_archives",
-                "empty_score_rank_top",
+                "preliminary_formulas_present",
             )
         )
         or any(
@@ -253,7 +253,7 @@ def package(root: Path, version: str, commit: str, run_id: str, run_number: int)
         "status": "PASS",
         "version": version,
         "source_commit": commit,
-        "empty_score_rank_top": True,
+        "preliminary_formulas_present": True,
     }:
         raise ValueError("RELEASE_FROZEN_CLI_REQUIRED")
     checks = json.loads((root / "artifacts/private/checks.json").read_text(encoding="utf-8"))
@@ -299,12 +299,12 @@ def package(root: Path, version: str, commit: str, run_id: str, run_number: int)
                 "synthetic_frozen_update_all",
                 "privacy_source_history",
                 "privacy_archives",
-                "empty_score_rank_top",
+                "preliminary_formulas_present",
             )
         },
         "human_gates": {"native_excel": "NOT_RUN", "windows_ux": "NOT_RUN"},
         "production_qualification": "NOT_RUN",
-        "rating_methodology": "PENDING",
+        "rating_methodology": "PROVISIONAL",
     }
     review = {
         "BUILD_EVIDENCE.json": policy.canonical(evidence),
@@ -312,8 +312,8 @@ def package(root: Path, version: str, commit: str, run_id: str, run_number: int)
             "TECHNICAL PREVIEW — НЕ УТВЕРЖДЁННЫЙ РЕЙТИНГ\n"
             "Только автоматические синтетические проверки и Windows frozen smoke.\n"
             "Производственные источники не включены и здесь не квалифицированы.\n"
-            "Native Excel и ручная Windows UX: NOT_RUN. Методика: PENDING.\n"
-            "Баллы/ранги/TOP пусты; №7–9 — наблюдения/кандидаты, UNKNOWN.\n"
+            "Native Excel и ручная Windows UX: NOT_RUN. Методика: PROVISIONAL.\n"
+            "Предварительная сумма без перенормировки; №6 ожидает правило, №9 отложен.\n"
             "Это отдельный публичный evidence; приватный handoff не прикладывается.\n"
         ).encode(),
     }

@@ -83,7 +83,7 @@ def main() -> None:
         "isolated_fingerprint": content_digest(build_inputs(source)),
         "python": sys.version.split()[0],
         "platform": sys.platform,
-        "rating_methodology": "PENDING",
+        "rating_methodology": "PROVISIONAL",
         "native_excel": "NOT_RUN",
         "human_windows_ux": "NOT_RUN",
     }

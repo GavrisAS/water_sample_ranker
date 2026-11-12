@@ -82,18 +82,20 @@ def main() -> None:
         for row in report["rows"]:
             if not row["identity"]["display"].startswith("DEMO-"):
                 raise ValueError("FROZEN_DEMO_IDENTITY")
-            if any(
-                c["normalized_score"] is not None or c["weighted_contribution"] is not None
-                for c in row["criteria"]
+            if row["criteria"][8]["state"] != "DISABLED":
+                raise ValueError("FROZEN_DISABLED_CRITERION")
+            if (
+                row["criteria"][5]["state"] == "PENDING_CUSTOMER_RULE"
+                and row["criteria"][5]["weighted_contribution"] is not None
             ):
-                raise ValueError("FROZEN_SCORE_PRESENT")
+                raise ValueError("FROZEN_FALSE_GATE_BONUS")
     (run / "frozen-cli.json").write_text(
         json.dumps(
             {
                 "status": "PASS",
                 "version": args.version,
                 "source_commit": args.source_sha,
-                "empty_score_rank_top": True,
+                "preliminary_formulas_present": True,
             }
         ),
         encoding="utf-8",

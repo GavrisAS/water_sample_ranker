@@ -44,12 +44,6 @@ def select_pair(
         )
         if assignment.stage == identity.stage:
             candidates.append(s)
-    if undated:
-        return SamplePair(
-            reason="UNDATED_SAMPLE_BLOCKS_RECENCY",
-            conflict=True,
-            evidence=tuple(e for s in undated for e in s.evidence),
-        )
     groups: defaultdict[datetime, list[Sample]] = defaultdict(list)
     for s in candidates:
         assert s.date is not None
@@ -88,10 +82,90 @@ def select_pair(
     return SamplePair(
         selected[0] if selected else None,
         selected[1] if len(selected) > 1 else None,
-        "EXACT_DUPLICATES_COLLAPSED"
+        "UNDATED_SKIPPED; LATEST_TWO_CHRONOLOGICAL_NO_SKIP"
+        if undated
+        else "EXACT_DUPLICATES_COLLAPSED"
         if any(len(g) > 1 for g in groups.values())
         else "LATEST_TWO_CHRONOLOGICAL_NO_SKIP"
         if selected
         else "NO_SAMPLE",
-        evidence=tuple(all_evidence),
+        evidence=tuple(all_evidence + [e for s in undated for e in s.evidence]),
+    )
+
+
+def current_samples(
+    identity: TargetIdentity,
+    records: tuple[Sample, ...],
+    histories: tuple[WellHistory, ...],
+    as_of: date,
+) -> tuple[Sample, ...]:
+    """Только датированные пробы доказанной актуальной стадии и пласта."""
+    if identity.status != "RESOLVED" or identity.stage is None or identity.plast is None:
+        return ()
+    selected = []
+    for s in records:
+        if (
+            s.source != "database"
+            or s.field != identity.fund.normalized_field
+            or s.root != identity.fund.base_well_id
+            or s.plast != identity.plast
+            or not s.date
+            or s.date.date() > as_of
+        ):
+            continue
+        stage = assign_stage_by_date(
+            physical_root=s.root,
+            normalized_field=s.field,
+            normalized_plast=s.plast,
+            observed_at=s.date,
+            histories=histories,
+            target_identity=s.well,
+            observation_location=s.evidence[0].location,
+        ).stage
+        if stage == identity.stage:
+            selected.append(s)
+    return tuple(selected)
+
+
+def complementary_gate(pair: SamplePair, samples: tuple[Sample, ...]) -> SamplePair:
+    """Объединение только двух уникальных, дополняющих замеров в пределах 7 суток."""
+    from dataclasses import replace
+
+    from water_sample_ranker.criteria.rules import invalid
+
+    s = pair.last
+    if not s or not s.date or invalid(s, ("water", "chlorine")):
+        return pair
+    if (s.chlorine is None) == (s.water_l_day is None):
+        return pair
+    candidates = [
+        p
+        for p in samples
+        if p.date
+        and p.date != s.date
+        and 0 < (s.date - p.date).total_seconds() <= 7 * 86400
+        and (p.field, p.root, p.plast) == (s.field, s.root, s.plast)
+    ]
+    # Конкурирующие кандидаты не сортируются произвольно и не игнорируются.
+    if len(candidates) != 1:
+        return replace(
+            pair,
+            last=None,
+            reason="GATE_COMPLEMENT_AMBIGUOUS" if candidates else "GATE_COMPLEMENT_UNAVAILABLE",
+        )
+    p = candidates[0]
+    if invalid(p, ("water", "chlorine")) or not (
+        (s.chlorine is None and p.chlorine is not None and p.water_l_day is None)
+        or (s.water_l_day is None and p.water_l_day is not None and p.chlorine is None)
+    ):
+        return replace(pair, last=None, reason="GATE_COMPLEMENT_NOT_EXCLUSIVE")
+    return SamplePair(
+        replace(
+            s,
+            chlorine=s.chlorine if s.chlorine is not None else p.chlorine,
+            water_l_day=s.water_l_day if s.water_l_day is not None else p.water_l_day,
+        ),
+        previous=p,
+        reason="GATE_COMPLEMENT_EXACT_STAGE_WITHIN_7_DAYS",
+        evidence=(*s.evidence, *p.evidence),
     )

@@ -120,7 +120,7 @@ def read_optional(path: Path | None, role: str) -> OptionalInputs:
             tuple(points),
             "Контракт прочитан; схема обмена и применимость не утверждены",
         )
-    except ValueError, OSError, TypeError, OverflowError:
+    except ValueError, OSError, TypeError, OverflowError, RecursionError:
         # Integers beyond float range are invalid coordinates, not reader crashes.
         return OptionalInputs(
             "SCHEMA_DRIFT",

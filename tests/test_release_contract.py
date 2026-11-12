@@ -129,7 +129,7 @@ def synthetic_assets(directory):
                 "synthetic_frozen_update_all",
                 "privacy_source_history",
                 "privacy_archives",
-                "empty_score_rank_top",
+                "preliminary_formulas_present",
             )
         },
         "human_gates": {"native_excel": "NOT_RUN", "windows_ux": "NOT_RUN"},

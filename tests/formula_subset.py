@@ -1,19 +1,38 @@
 """Independent small golden evaluator, NOT an Excel engine or native acceptance."""
 
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from openpyxl.formula import Tokenizer
 from openpyxl.utils import range_boundaries
+from openpyxl.utils.datetime import from_excel, to_excel
 
 
 class Evaluator:
     def __init__(self, book: Any) -> None:
         self.book = book
+        self.cache = {}
+        self.depth = 0
 
     def cell(self, sheet: str, coord: str) -> Any:
+        if not self.depth:
+            self.cache.clear()
+        key = (sheet, coord)
+        if key in self.cache:
+            return self.cache[key]
+        self.depth += 1
+        try:
+            value = self._cell(sheet, coord)
+            self.cache[key] = value
+            return value
+        finally:
+            self.depth -= 1
+
+    def _cell(self, sheet: str, coord: str) -> Any:
         raw = self.book[sheet][coord].value
         if not isinstance(raw, str) or not raw.startswith("="):
-            return raw
+            return to_excel(raw) if isinstance(raw, datetime) else raw
         tokens = [t for t in Tokenizer(raw).items if t.type != "WHITE-SPACE"]
         index = 0
         precedence = {
@@ -72,12 +91,16 @@ class Evaluator:
         assert index == len(tokens), (raw, index, tokens)
 
         def ref(value: str) -> Any:
-            if value.startswith("tblData["):
-                header = value[8:-1]
-                ws = self.book["Данные"]
-                min_col, min_row, max_col, max_row = range_boundaries(ws.tables["tblData"].ref)
+            if value.startswith(("tblData[", "tblOperator[")):
+                table, header = value.split("[", 1)
+                header = header[:-1]
+                ws = self.book["Данные" if table == "tblData" else "Настройки"]
+                min_col, min_row, max_col, max_row = range_boundaries(ws.tables[table].ref)
                 col = next(c.column for c in ws[min_row] if c.value == header)
-                return [ws.cell(r, col).value for r in range(min_row + 1, max_row + 1)]
+                return [
+                    self.cell(ws.title, ws.cell(r, col).coordinate)
+                    for r in range(min_row + 1, max_row + 1)
+                ]
             name, coordinate = value.rsplit("!", 1) if "!" in value else (sheet, value)
             name = name.strip("'")
             coordinate = coordinate.replace("$", "")
@@ -101,10 +124,19 @@ class Evaluator:
                 left, right = evaluate(a), evaluate(b)
                 if op == "=":
                     return left == right
-                if op == ">":
-                    return left > right
-                if op == "<=":
-                    return left <= right
+                if op in (">", "<", ">=", "<="):
+                    left = 0 if left in (None, "") else left
+                    right = 0 if right in (None, "") else right
+                    return {
+                        ">": lambda: left > right,
+                        "<": lambda: left < right,
+                        ">=": lambda: left >= right,
+                        "<=": lambda: left <= right,
+                    }[op]()
+                if op == "<>":
+                    return left != right
+                if op == "*":
+                    return left * right
                 if op == "+":
                     return left + right
                 if op == "-":
@@ -112,7 +144,11 @@ class Evaluator:
                 if op == "/":
                     return left / right
                 if op == "&":
-                    return str(left) + str(right)
+                    return str(
+                        int(left) if isinstance(left, float) and left.is_integer() else left
+                    ) + str(
+                        int(right) if isinstance(right, float) and right.is_integer() else right
+                    )
                 raise AssertionError(op)
             name, args = parts
             if name == "IF":
@@ -120,7 +156,7 @@ class Evaluator:
             if name == "IFERROR":
                 try:
                     return evaluate(args[0])
-                except IndexError, ZeroDivisionError:
+                except IndexError, ZeroDivisionError, ValueError, TypeError:
                     return evaluate(args[1])
             values = [evaluate(a) for a in args]
             if name == "INDEX":
@@ -134,10 +170,37 @@ class Evaluator:
             if name == "AND":
                 return all(values)
             if name == "COUNTIF":
-                return sum(v == values[1] for v in values[0])
+                condition = values[1]
+                if isinstance(condition, str) and condition.startswith(">"):
+                    threshold = float(condition[1:])
+                    return sum(isinstance(v, (int, float)) and v > threshold for v in values[0])
+                return sum(v == condition for v in values[0])
+            if name == "MATCH":
+                return values[1].index(values[0]) + 1
+            if name == "ROUND":
+                return float(
+                    Decimal(str(values[0])).quantize(
+                        Decimal(1).scaleb(-int(values[1])), rounding=ROUND_HALF_UP
+                    )
+                )
+            if name == "MIN":
+                return min(values)
+            if name == "INT":
+                return int(values[0] or 0)
+            if name in ("YEAR", "MONTH", "DAY"):
+                d = from_excel(values[0] or 0)
+                return getattr(d, {"YEAR": "year", "MONTH": "month", "DAY": "day"}[name])
+            if name == "DATE":
+                y, m, d = map(int, values)
+                y += (m - 1) // 12
+                m = (m - 1) % 12 + 1
+                return to_excel(datetime(y, m, 1) + timedelta(days=d - 1))
             if name == "SUM":
                 return sum(
-                    v for group in values for v in (group if isinstance(group, list) else [group])
+                    v
+                    for group in values
+                    for v in (group if isinstance(group, list) else [group])
+                    if isinstance(v, (int, float))
                 )
             if name == "ROW":
                 return self.book[sheet][coord].row

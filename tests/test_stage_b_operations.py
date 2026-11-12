@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 from water_sample_ranker import service
 from water_sample_ranker.cli import main
 from water_sample_ranker.config import AppConfig
-from water_sample_ranker.excel.layout import DATA_HEADERS, DATA_HEADERS_V2
+from water_sample_ranker.excel.layout import ALL_DATA_HEADERS, DATA_HEADERS
 from water_sample_ranker.source_manifest import fingerprint
 
 DAY = date(2026, 11, 5)
@@ -33,7 +33,7 @@ def test_batch_one_lha_read_fixed_snapshot_and_output_rows(synthetic, monkeypatc
     )
     assert len(reads) == 1
     assert len(results) == 3
-    assert [len(r.rows) for r in results] == [105, 2, 2]
+    assert [len(r.rows) for r in results] == [104, 1, 1]
     assert all(r.report["source_manifest"] == results[0].report["source_manifest"] for r in results)
     assert all(r.report["calculation_date"] == DAY.isoformat() for r in results)
     assert progress[-1].percent == 100
@@ -49,10 +49,10 @@ def test_batch_one_lha_read_fixed_snapshot_and_output_rows(synthetic, monkeypatc
         w = load_workbook(r.output, read_only=False)
         assert w["Данные"].max_row - 6 == len(r.rows)
         headers = tuple(c.value for c in w["Данные"][6])
-        assert headers == DATA_HEADERS_V2 and headers[: len(DATA_HEADERS)] == DATA_HEADERS
+        assert headers == ALL_DATA_HEADERS and headers[: len(DATA_HEADERS)] == DATA_HEADERS
         assert "не баллы" in headers[47]
         assert w["Данные"]["AV7"].value
-        assert w["Расчет"]["J4"].value == '=""'
+        assert "ROUND(SUM(" in w["Расчет"]["J4"].value
         w.close()
     before = {p: fingerprint(p) for p in target.iterdir()}
     with pytest.raises(service.ServiceError, match="OUTPUT_EXISTS"):
@@ -128,9 +128,9 @@ def test_optional_missing_wrong_schema_and_validate_no_writes(synthetic: AppConf
     r = service.run_validate(synthetic, as_of=DAY)
     assert not r.has_errors
     assert set(synthetic.root.rglob("*")) == before
-    assert r.report["optional_sources"]["gtm_plan"]["status"] == "SCHEMA_DRIFT"
-    assert r.report["optional_sources"]["geodata"]["status"] == "SOURCE_UNAVAILABLE"
-    assert all(c.state == "UNKNOWN" for row in r.rows for c in row.criteria[6:])
+    assert r.report["optional_sources"]["gtm_plan"]["status"] == "DISABLED"
+    assert r.report["optional_sources"]["geodata"]["status"] == "DISABLED"
+    assert all(c.state == "UNKNOWN" for row in r.rows for c in row.criteria[6:8])
 
 
 def test_cli_all_help_and_batch(synthetic, capsys):
@@ -175,7 +175,10 @@ def test_reproducible_demo_is_all_synthetic(tmp_path):
     assert [len(r.rows) for r in results] == [2, 2, 2]
     assert all(r.identity.display.startswith("DEMO-") for result in results for r in result.rows)
     assert all(
-        c.normalized_score is None for result in results for r in result.rows for c in r.criteria
+        c.normalized_score is None
+        for result in results
+        for r in result.rows
+        for c in r.criteria[6:]
     )
     assert (
         sum(
@@ -184,7 +187,7 @@ def test_reproducible_demo_is_all_synthetic(tmp_path):
             for r in result.rows
             for e in r.diagnostic_evidence
         )
-        == 3
+        == 0
     )
 
 

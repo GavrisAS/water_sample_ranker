@@ -68,20 +68,26 @@ def test_same_well_sources_and_fields_do_not_mask_invalid_latest(synthetic, colu
     assert row.pair.last.date.day == 10  # Не выбирается более старая пригодная проба.
     for number in affected:
         assert row.criteria[number - 1].state == Truth.UNKNOWN
-        assert row.criteria[number - 1].diagnostic_reason == "INVALID_MEASUREMENT"
+        assert "INVALID_MEASUREMENT" in row.criteria[number - 1].diagnostic_reason
     assert row.criteria[3].state == Truth.TRUE  # Независимый AB из slide сохранён.
     assert row.criteria[4].state == Truth.TRUE
     if column == "W":
-        assert row.criteria[2].state == Truth.FALSE and row.criteria[5].state == Truth.TRUE
+        assert (
+            row.criteria[2].state == Truth.FALSE
+            and row.criteria[5].state == Truth.PENDING_CUSTOMER_RULE
+        )
         assert row.separator == "сепаратор МЗС"
     if column == "L":
-        assert row.criteria[1].state == Truth.TRUE and row.separator == "UNKNOWN"
+        assert row.criteria[1].state == Truth.TRUE and row.separator == "сепаратор МЗС"
     other = next(
         x
         for x in r.rows
         if x.identity.display == "1" and x.identity.fund.normalized_field == "пырейное"
     )
-    assert other.criteria[1].state == Truth.TRUE and other.criteria[5].state == Truth.TRUE
+    assert (
+        other.criteria[1].state == Truth.TRUE
+        and other.criteria[5].state == Truth.PENDING_CUSTOMER_RULE
+    )
     assert r.report["lha"]["invalid_measurements"]["total"] == 1
 
 
@@ -113,7 +119,17 @@ def test_ab_header_drift_fails_closed_with_exact_location(synthetic, header):
     assert r.has_errors
     issue = next(i for i in r.report["issues"] if i["code"] == "LHA_SCHEMA_DRIFT")
     assert issue["locations"] == [{"file": str(path), "sheet": "Для слайда", "cell": "AB27"}]
-    assert all(x.criteria[3].state == x.criteria[4].state == Truth.UNKNOWN for x in r.rows)
+    assert all(x.criteria[4].state == Truth.UNKNOWN for x in r.rows)
+    assert all(
+        x.criteria[3].state == Truth.UNKNOWN
+        or (
+            x.identity.display == "23"
+            and x.identity.fund.normalized_field == "береговое"
+            and x.identity.plast == "ПК1"
+            and x.criteria[3].state == Truth.NOT_APPLICABLE
+        )
+        for x in r.rows
+    )
 
 
 def test_missing_slide_is_an_error_and_never_database_conclusion(synthetic):
@@ -124,7 +140,17 @@ def test_missing_slide_is_an_error_and_never_database_conclusion(synthetic):
     b.close()
     r = run_validate(synthetic, as_of=DAY)
     assert r.has_errors and any(i["code"] == "LHA_SHEET_MISSING" for i in r.report["issues"])
-    assert all(x.criteria[3].state == x.criteria[4].state == Truth.UNKNOWN for x in r.rows)
+    assert all(x.criteria[4].state == Truth.UNKNOWN for x in r.rows)
+    assert all(
+        x.criteria[3].state == Truth.UNKNOWN
+        or (
+            x.identity.display == "23"
+            and x.identity.fund.normalized_field == "береговое"
+            and x.identity.plast == "ПК1"
+            and x.criteria[3].state == Truth.NOT_APPLICABLE
+        )
+        for x in r.rows
+    )
 
 
 @pytest.mark.parametrize("value", [None, "#REF!", "#DIV/0!", '="Т"'])
@@ -150,7 +176,7 @@ def test_valid_contract_and_freshness_dates_are_observed_without_cutoff_policy(s
         "status": "FRESHNESS_POLICY_PENDING",
     }
     assert {k: r.report["source_freshness"][k] for k in expected} == expected
-    assert r.report["source_freshness"]["confirmed_latest_count"] == 109
+    assert r.report["source_freshness"]["confirmed_latest_count"] == 106
     assert r.report["source_freshness"]["policy"] == "DESCRIPTIVE_ONLY_NO_EXPIRY_OR_SCORE"
     assert "ВНИМАНИЕ: актуальность ЛХА" in r.summary()
-    assert r.rows[0].criteria[0].state == Truth.UNKNOWN
+    assert r.rows[0].criteria[0].state == Truth.TRUE

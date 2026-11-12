@@ -110,7 +110,8 @@ def test_future_incomplete_latest_and_duplicate_conflicts_do_not_fall_back() -> 
     undated = select_pair(
         identity, (*records, replace(current, date=None)), (h,), date(2026, 11, 5)
     )
-    assert undated.conflict and undated.last is None
+    assert not undated.conflict and undated.last == current
+    assert "UNDATED_SKIPPED" in undated.reason
 
 
 def test_exact_duplicates_keep_all_source_cells() -> None:

@@ -70,7 +70,7 @@ def test_capacity_1000_1001_and_exclusive_creation(synthetic: AppConfig, tmp_pat
     assert not (tmp_path / "1001.xlsx").exists()
 
 
-@pytest.mark.parametrize("sheet,cell,value", [("Расчет", "J4", "=1"), ("Настройки", "D21", 0.99)])
+@pytest.mark.parametrize("sheet,cell,value", [("Расчет", "J4", "=1"), ("Настройки", "D21", 1.1)])
 def test_template_validation_rejects_invented_score_or_weights(
     synthetic: AppConfig, sheet, cell, value
 ) -> None:

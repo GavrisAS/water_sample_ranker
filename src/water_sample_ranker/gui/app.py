@@ -53,8 +53,7 @@ FILE_FIELDS = (
     ("well_history", "База по скважинам"),
     ("monitoring", "Мониторинг ГСС"),
     ("tech_mode", "Техрежим"),
-    ("gtm_plan", "План ГТМ (необязательный)"),
-    ("geodata", "Координаты (необязательные)"),
+    ("manual_input", "Предыдущая книга (ручные отметки)"),
     ("output", "Результат"),
 )
 
@@ -71,10 +70,10 @@ class CriteriaDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(
             QLabel(
-                "Веса из презентации фиксированы. Численные пороги ниже можно изменить "
+                "Веса из презентации согласованы и редактируются в Excel. Пороги можно изменить "
                 "для сценария.\n"
                 "Пользовательские пороги требуют согласования. "
-                "№1, агрегирование и №7–9 заблокированы."
+                "Предварительная сумма без перенормировки. Ручные ГТМ и веса — в Excel."
             )
         )
         self.table = QTableWidget(18, 6, self)
@@ -84,18 +83,17 @@ class CriteriaDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setStretchLastSection(True)
         conditions = (
-            ("длительность", "PENDING", "мес.; дни", "Требует согласования"),
+            ("полные месяцы / 12", "не более 1", "мес.; дни", "Предварительный режим"),
             (">; <; >; <; >", "2000; 8000; 2000; 22000; 7", "мг/дм³; дни", "Фиксировано"),
             ("<; >=; >", "2000; 2000; 7", "мг/дм³; дни", "Фиксировано"),
-            ("Т первым или К+Т", "scope №23 PENDING", "генезис", "Scope требует согласования"),
+            ("Т первым или К+Т", "точное исключение", "генезис", "Согласовано"),
             ("содержит", "?", "генезис", "Фиксировано"),
-            (">; >", "1000; 2000", "л/сут; мг/дм³", "Фиксировано"),
+            (">; >", "1000; 2000", "л/сут; мг/дм³", "Только входное условие"),
             ("PENDING", "PENDING", "мм", "Требует согласования"),
-            ("PENDING", "PENDING", "дни", "Нет плана / окна"),
-            ("PENDING", "PENDING", "м", "Нет карт / правила"),
+            ("Да / Нет / Не задано", "ручной ввод в Excel", "—", "Согласовано"),
         )
         for row, (name, weight, condition) in enumerate(
-            zip(NAMES, WEIGHTS, conditions, strict=True)
+            zip(NAMES[:8], WEIGHTS[:8], conditions, strict=True)
         ):
             self._row(row, (name, str(weight), *condition))
         self._row(9, ("Сепаратор ПК1", "—", ">= / <", "6.912", "м³/сут", "Не критерий рейтинга"))
@@ -107,7 +105,7 @@ class CriteriaDialog(QDialog):
                 "1…30",
                 str(self.top_n),
                 "скважин",
-                "Редактируется; график до согласования пуст",
+                "Только размер диаграммы; полный фонд сохраняется",
             ),
         )
         item = self.table.item(10, 3)
@@ -241,7 +239,7 @@ class LoaderWindow(QMainWindow):
                 self,
                 "О программе",
                 f"Water Sample Ranker {__version__}\n{PREVIEW_NOTICE}\n"
-                "Баллы, ранги и TOP не рассчитываются. Native Excel и ручная Windows UX: NOT_RUN.\n"
+                "Предварительный рейтинг. Native Excel и ручная Windows UX: NOT_RUN.\n"
                 "Qt/PySide6 и Shiboken6: LGPLv3; Python и другие компоненты: "
                 "см. THIRD_PARTY_NOTICES.txt и licenses/ рядом с EXE.",
             )
@@ -296,7 +294,7 @@ class LoaderWindow(QMainWindow):
         self._status_box.setReadOnly(True)
         self._status_box.setPlainText(
             "Проверьте файлы, затем выберите одно месторождение. "
-            "Итоговый скоринг ожидает согласования."
+            "Предварительный рейтинг / методика частично согласована."
         )
         outer.addWidget(self._status_box, 1)
         self._state()
@@ -333,9 +331,7 @@ class LoaderWindow(QMainWindow):
     def _browse(self, key: str) -> None:
         initial = str(self.config.path(key) or self.config.root)
         func = QFileDialog.getSaveFileName if key == "output" else QFileDialog.getOpenFileName
-        file_filter = (
-            "JSON v1 (*.json)" if key in {"gtm_plan", "geodata"} else "Excel (*.xlsx *.xlsm)"
-        )
+        file_filter = "Excel (*.xlsx *.xlsm)"
         selected, _ = func(self, "Выберите файл", initial, file_filter)
         if selected:
             self._fields[key].setText(selected)

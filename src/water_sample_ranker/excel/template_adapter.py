@@ -435,6 +435,9 @@ def derive(reference: Path, destination: Path) -> None:
     dv.add(f"AB7:AJ{CAPACITY + 6}")
     book["Расчет"].freeze_panes = "D4"
     book["Рейтинг"].freeze_panes = "C4"
+    from water_sample_ranker.excel.stage_c import adapt
+
+    adapt(book)
     destination.parent.mkdir(parents=True, exist_ok=True)
     book.save(destination)
     book.close()

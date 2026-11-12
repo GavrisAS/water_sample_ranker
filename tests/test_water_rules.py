@@ -53,8 +53,12 @@ def test_chlorine_literal_boundaries(prev, last, min_prev, min_last, days, expec
         sample(date=last_date - timedelta(days=days), chlorine=prev, mineralization=min_prev),
     )
     assert chlorine(p, 2).state == expected
-    assert chlorine(p, 2).normalized_score is None
-    assert chlorine(p, 2).weighted_contribution is None
+    assert chlorine(p, 2).normalized_score == (
+        None if expected == Truth.UNKNOWN else float(expected == Truth.TRUE)
+    )
+    assert chlorine(p, 2).weighted_contribution == (
+        None if expected == Truth.UNKNOWN else 0.08 * (expected == Truth.TRUE)
+    )
 
 
 @pytest.mark.parametrize(
@@ -82,14 +86,14 @@ def test_genesis_threshold(prev, last, days, expected) -> None:
     [
         (1000, 3000, Truth.FALSE),
         (1000.01, 2000, Truth.FALSE),
-        (1000.01, 2000.01, Truth.TRUE),
+        (1000.01, 2000.01, Truth.PENDING_CUSTOMER_RULE),
         (None, 4000, Truth.UNKNOWN),
         (-1, 4000, Truth.UNKNOWN),
         (7000, -1, Truth.UNKNOWN),
         (-1, 0, Truth.UNKNOWN),
         (0, 4000, Truth.FALSE),
         (7000, 0, Truth.FALSE),
-        (1e100, 1e100, Truth.TRUE),
+        (1e100, 1e100, Truth.PENDING_CUSTOMER_RULE),
     ],
 )
 def test_water_liters(q, cl, expected) -> None:
@@ -102,9 +106,9 @@ def test_water_liters(q, cl, expected) -> None:
         (6911.99, "Надым"),
         (6912, "сепаратор МЗС"),
         (0, "Надым"),
-        (-1, "UNKNOWN"),
+        (-1, "нет данных"),
         (1e100, "сепаратор МЗС"),
-        (None, "UNKNOWN"),
+        (None, "нет данных"),
     ],
 )
 def test_separator_inclusive(q, expected) -> None:
@@ -135,7 +139,7 @@ def test_technical_and_disputed(text, expected) -> None:
 
 def test_23_exception_is_not_global() -> None:
     p = SamplePair(sample(well="23", conclusion="Т"))
-    assert technical(p, well="23", field="береговое").state == Truth.UNKNOWN
+    assert technical(p, well="23", field="береговое").state == Truth.TRUE
     assert technical(p, well="23", field="пырейное").state == Truth.TRUE
     assert (
         technical(p, well="23", field="береговое", confirmed_scope=("береговое", "23", "ПК1")).state
@@ -152,7 +156,7 @@ def test_no_sample_and_duration_have_no_invented_score() -> None:
     assert (empty.state, days, months) == (Truth.UNKNOWN, None, None)
     known, days, months = duration(pair(), date(2026, 11, 5))
     assert days == 87 and months == 2
-    assert known.state == Truth.UNKNOWN and known.normalized_score is None
+    assert known.state == Truth.TRUE and known.normalized_score == 2 / 12
 
 
 def test_previous_only_conflict_does_not_discard_confirmed_latest_facts() -> None:
@@ -161,7 +165,7 @@ def test_previous_only_conflict_does_not_discard_confirmed_latest_facts() -> Non
     )
     assert chlorine(p, 2).state == Truth.UNKNOWN
     assert chlorine(p, 3).state == Truth.UNKNOWN
-    assert water_rate(p).state == Truth.TRUE
+    assert water_rate(p).state == Truth.PENDING_CUSTOMER_RULE
     assert technical(p, well="501").state == Truth.TRUE
     assert disputed(p).state == Truth.TRUE
     assert separator(p, "ПК1") == "сепаратор МЗС"
@@ -182,7 +186,7 @@ def test_nonfinite_or_negative_measurements_never_form_negative_decisions(bad, f
         assert c.state == Truth.UNKNOWN
         assert c.normalized_score is None and c.weighted_contribution is None
     if field == "water_l_day":
-        assert separator(p, "ПК1") == "UNKNOWN"
+        assert separator(p, "ПК1") == "нет данных"
 
 
 @pytest.mark.parametrize("offset", [-365, -1, 1, 365])
@@ -204,7 +208,7 @@ def test_agreed_decisions_are_invariant_under_common_date_translation(offset):
         a, b = decision(p), decision(shifted)
         assert a.state == b.state
         assert a.raw_value == b.raw_value
-        assert a.normalized_score is b.normalized_score is None
+        assert a.normalized_score == b.normalized_score
 
 
 @pytest.mark.parametrize("seconds,expected", [(0, Truth.FALSE), (1, Truth.TRUE)])

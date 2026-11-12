@@ -7,7 +7,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from collections import Counter
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -23,21 +23,23 @@ from water_sample_ranker.bundle import (
     verify_bundle,
 )
 from water_sample_ranker.config import OPTIONAL_ROLES, ROLES, AppConfig
-from water_sample_ranker.criteria.rules import evaluate, separator
+from water_sample_ranker.criteria.rules import evaluate, invalid, separator, water_rate
+from water_sample_ranker.criteria.rules import result as criterion_result
 from water_sample_ranker.diagnostics import attach_evidence, evidence_aggregates, freshness
-from water_sample_ranker.domain.models import RankedWell
-from water_sample_ranker.domain.scoring import coverage
+from water_sample_ranker.domain.models import RankedWell, Truth
+from water_sample_ranker.domain.scoring import confirmed_score, coverage, unavailable_weight
 from water_sample_ranker.excel.compatibility import changed_parts, inspect_template
+from water_sample_ranker.excel.manual import identity_key, read_marks, read_operator_settings
 from water_sample_ranker.excel.writer import write
 from water_sample_ranker.matching.current_plast import resolve_current
-from water_sample_ranker.matching.matcher import select_pair
+from water_sample_ranker.matching.matcher import complementary_gate, current_samples, select_pair
 from water_sample_ranker.matching.normalize import normalize_field_name, normalize_well_id
 from water_sample_ranker.progress import ProgressCallback, ProgressUpdate
 from water_sample_ranker.readers.fund import read_fund
 from water_sample_ranker.readers.gdi import read_gdi
 from water_sample_ranker.readers.lha import read_lha
 from water_sample_ranker.readers.monitoring import MonitoringHistory, read_history
-from water_sample_ranker.readers.optional import read_optional
+from water_sample_ranker.readers.optional import OptionalInputs
 from water_sample_ranker.readers.well_history import read_well_history
 from water_sample_ranker.source_manifest import fingerprint
 from water_sample_ranker.validation.reconciliation import reconcile
@@ -65,7 +67,7 @@ class ServiceResult:
         lines = [
             f"Фонд: {r.get('fund_total', 0)}; подготовлено: {len(self.rows)}",
             "Месторождения: " + ", ".join(r.get("available_fields", [])),
-            "Итоговый рейтинг не рассчитан: методика уточняется.",
+            "Предварительный рейтинг / методика частично согласована.",
             f"Пороги: {r.get('criteria_policy_status', 'LITERAL_V0_2')}",
         ]
         reconciliation = r.get("fund_reconciliation", {})
@@ -95,17 +97,9 @@ class ServiceResult:
         )
         if self.output:
             lines.append(f"Результат: {self.output}")
-        if r.get("evidence_stage_b"):
-            evidence = r.get("selected_evidence_stage_b", r["evidence_stage_b"])
-            lines.append(
-                "Наблюдения №7–9 (не баллы): "
-                + "; ".join(
-                    f"№{number}: пар {v['pairs']}, изменений {v['changes']}, "
-                    f"событий {v['events']}, "
-                    f"соседей-кандидатов {v['neighbors']}"
-                    for number, v in evidence.items()
-                )
-            )
+        if r.get("deprecated_inputs_ignored"):
+            lines.append("Устаревшие пути плана ГТМ/геоданных проигнорированы; файлы не читались.")
+        lines.append("№6: PASS ожидает предметное правило; ручной ГТМ задаётся в Excel.")
         for role, state in r.get("optional_sources", {}).items():
             lines.append(f"Необязательный {role}: {state['status']}; {state['message']}")
         if errors:
@@ -135,27 +129,43 @@ def run_validate(
         "schemas": {},
         "criteria_snapshot": asdict(config.criteria),
         "criteria_policy_status": config.criteria.policy_status,
-        "rating_methodology": "PENDING",
+        "rating_methodology": "PROVISIONAL",
+        "methodology_status": {
+            "criterion_1": "CALENDAR_MONTHS_CLAMPED_PROVISIONAL",
+            "criterion_6": "GATE_ONLY_SECOND_STEP_PENDING",
+            "criterion_9": "DISABLED_BY_CUSTOMER",
+            "tie_policy": "COMPETITION_TECHNICAL_DRAFT",
+        },
         "available_fields": [],
         "config_source": str(config.root / "config.toml"),
         "visual": "VISUAL_REVIEW_PENDING",
         "windows": "WINDOWS_PENDING",
     }
     result = ServiceResult(report)
-    paths = {r: config.path(r) for r in ("calculator", *ROLES, *OPTIONAL_ROLES)}
+    paths = {r: config.path(r) for r in ("calculator", *ROLES, "manual_input")}
+    report["deprecated_inputs_ignored"] = [r for r in OPTIONAL_ROLES if config.path(r)]
     try:
         for role in ("calculator", "fund", "lha", "well_history"):
             path = paths[role]
             if path is None or not path.is_file():
                 report["errors"].append(f"SOURCE_REQUIRED: {role}")
         for role, candidates in config.extra.get("discovery_ambiguities", {}).items():
-            if config.path(role) is None:
+            if config.path(role) is None and role in {"fund", "lha", "well_history"}:
                 report["errors"].append(f"SOURCE_ROLE_AMBIGUOUS: {role}: {candidates}")
         if report["errors"]:
             return result
         for role, p in paths.items():
             if p is not None:
-                if role in OPTIONAL_ROLES:
+                if (
+                    role not in {"calculator", "fund", "lha", "well_history", "manual_input"}
+                    and not p.is_file()
+                ):
+                    paths[role] = None
+                    report.setdefault("optional_source_warnings", []).append(
+                        role + ": SOURCE_UNAVAILABLE"
+                    )
+                    continue
+                if role == "manual_input":
                     if p.is_file():
                         report["source_manifest"][role] = fingerprint(p)
                     continue
@@ -232,11 +242,17 @@ def run_validate(
         report["gdi_identity_observations"] = len(gdi)
         emit(60, "История штуцеров и необязательные источники")
         monitorpath = paths["monitoring"]
-        monitoring = (
-            read_history(monitorpath, day)
-            if monitorpath
-            else MonitoringHistory(reasons=("SOURCE_UNAVAILABLE",))
-        )
+        try:
+            monitoring = (
+                read_history(monitorpath, day)
+                if monitorpath and monitorpath.is_file()
+                else MonitoringHistory(reasons=("SOURCE_UNAVAILABLE",))
+            )
+        except OSError, ValueError, KeyError, BadZipFile, ET.ParseError:
+            monitoring = MonitoringHistory(reasons=("OPTIONAL_SOURCE_INVALID",))
+            report.setdefault("optional_source_warnings", []).append(
+                "monitoring: OPTIONAL_SOURCE_INVALID"
+            )
         monitoring_summary: dict[str, Any] = {
             "choke_rows": monitoring.choke_rows,
             "observations": len(monitoring.observations),
@@ -245,19 +261,102 @@ def run_validate(
             "suspicion_groups": [asdict_location_group(g) for g in monitoring.groups],
         }
         report["monitoring"] = monitoring_summary
-        plan = read_optional(paths["gtm_plan"], "gtm-plan")
-        geo = read_optional(paths["geodata"], "geodata")
+        plan = OptionalInputs(status="DISABLED", message="План ГТМ больше не используется")
+        geo = OptionalInputs(status="DISABLED", message="Отложен заказчиком")
         report["optional_sources"] = {
             role: {"status": source.status, "message": source.message}
             for role, source in (("gtm_plan", plan), ("geodata", geo))
         }
-        emit(72, "Идентичности, пары проб и девять состояний")
+        emit(72, "Идентичности, актуальные пробы и предварительные вклады")
+        operator_path = paths["manual_input"] or calculator
+        marks = read_marks(operator_path)
+        operator_settings = read_operator_settings(operator_path)
+        operator_files = (
+            sorted(operator_path.glob("*.xlsx")) if operator_path.is_dir() else [operator_path]
+        )
+        report["operator_manifest"] = {str(p): fingerprint(p) for p in operator_files}
+        report["operator_settings"] = operator_settings
+        report["operator_marks_loaded"] = len(marks)
+        settings_by_field = (
+            {field: read_operator_settings(operator_path, field) for field in fields}
+            if operator_path.is_dir()
+            else {}
+        )
         rows = []
         for well in fund.wells:
+            operator_settings = (
+                settings_by_field[well.normalized_field]
+                if operator_path.is_dir()
+                else operator_settings
+            )
             identity = resolve_current(well, history, gdi, day)
             pair = select_pair(identity, samples, history, day)
             slide = select_pair(identity, samples, history, day, "slide")
             criteria, days, months = evaluate(identity, pair, slide, day, config.criteria)
+            current = current_samples(identity, samples, history, day)
+            gate_pair = complementary_gate(pair, current)
+            gate = water_rate(gate_pair, config.criteria)
+            gate = replace(gate, diagnostic_reason=gate.diagnostic_reason + "; " + gate_pair.reason)
+            criteria = (*criteria[:5], gate, *criteria[6:])
+            temp_row = RankedWell(identity, pair, slide, criteria, days, months, "", None, 0)
+            mark = marks.get(identity_key(temp_row))
+            if mark:
+                c8 = criterion_result(
+                    8,
+                    Truth.TRUE
+                    if mark[5] == "Да"
+                    else Truth.FALSE
+                    if mark[5] == "Нет"
+                    else Truth.UNKNOWN,
+                    pair,
+                    "MANUAL_GTM_" + str(mark[5]),
+                )
+                criteria = (*criteria[:7], c8, criteria[8])
+                when, before, after, basis = mark[6:10]
+                if (
+                    isinstance(when, (date, datetime))
+                    and pair.last
+                    and pair.last.date
+                    and isinstance(before, (float, int))
+                    and isinstance(after, (float, int))
+                    and basis
+                ):
+                    event_day = when.date() if isinstance(when, datetime) else when
+                    if pair.last.date.date() < event_day <= day and after > before > 0:
+                        c7 = criterion_result(
+                            7, Truth.TRUE, pair, "MANUAL_CONFIRMED_DIAMETER_INCREASE_AFTER_SAMPLE"
+                        )
+                        criteria = (*criteria[:6], c7, *criteria[7:])
+            factual_criteria = criteria
+            adjusted = []
+            for c in criteria:
+                weight = float(operator_settings.get(f"D{c.number + 20}", c.weight))
+                enabled = operator_settings.get(f"I{c.number + 20}", "Да") == "Да"
+                if c.number < 9 and not enabled:
+                    c = replace(
+                        c, state=Truth.DISABLED, normalized_score=None, weighted_contribution=None
+                    )
+                if (
+                    c.number == 1
+                    and operator_settings.get("B13", "Полные календарные месяцы")
+                    != "Полные календарные месяцы"
+                ):
+                    c = replace(
+                        c,
+                        state=Truth.PENDING_CUSTOMER_RULE,
+                        normalized_score=None,
+                        weighted_contribution=None,
+                    )
+                adjusted.append(
+                    replace(
+                        c,
+                        weight=weight,
+                        weighted_contribution=c.normalized_score * weight
+                        if c.normalized_score is not None
+                        else None,
+                    )
+                )
+            criteria = tuple(adjusted)
             cover, unknown = coverage(criteria)
             rows.append(
                 RankedWell(
@@ -267,12 +366,17 @@ def run_validate(
                     criteria,
                     days,
                     months,
-                    separator(pair, identity.plast, config.criteria),
+                    separator(latest_water_pair(current, pair), identity.plast, config.criteria),
                     cover,
                     unknown,
+                    factual_criteria=factual_criteria,
+                    gate_pair=gate_pair,
+                    separator_pair=latest_water_pair(current, pair),
                 )
             )
-        result.rows = attach_evidence(tuple(rows), history, monitoring, plan, geo, day)
+        result.rows = attach_evidence(
+            tuple(rows), history, monitoring, plan, geo, day, archive_neighbors=False
+        )
         rows = list(result.rows)
         report["evidence_stage_b"] = evidence_aggregates(result.rows)
         # Private register: raw source identities and coordinates never enter handoff.
@@ -369,8 +473,26 @@ def run_validate(
             }
             for field in fields
         }
+        report["preliminary_scores"] = [
+            {
+                "field": r.identity.fund.normalized_field,
+                "well": r.identity.display,
+                "score": confirmed_score(r.criteria),
+                "unavailable_weight": unavailable_weight(r.criteria),
+                "rank": 1
+                + sum(
+                    confirmed_score(other.criteria) > confirmed_score(r.criteria)
+                    for other in rows
+                    if other.identity.fund.normalized_field == r.identity.fund.normalized_field
+                ),
+            }
+            for r in rows
+        ]
         report["rows"] = [asdict(r) for r in rows]
         emit(94, "Проверка неизменности источников")
+        for p, before in report["operator_manifest"].items():
+            if fingerprint(Path(p)) != before:
+                report["errors"].append("MANUAL_SOURCE_CHANGED")
         for role, p in paths.items():
             if (
                 p is not None
@@ -385,6 +507,24 @@ def run_validate(
     except (OSError, ValueError, KeyError, BadZipFile, ET.ParseError, ServiceError) as error:
         report["errors"].append(str(error))
         return result
+
+
+def latest_water_pair(samples, fallback):
+    from water_sample_ranker.domain.measurements import valid_measurement
+    from water_sample_ranker.domain.models import SamplePair
+
+    dated = [
+        s
+        for s in samples
+        if s.date and not invalid(s, ("water",)) and valid_measurement(s.water_l_day)
+    ]
+    if not dated:
+        return SamplePair()
+    last = max(s.date for s in dated)
+    group = [s for s in dated if s.date == last]
+    if len({s.water_l_day for s in group}) != 1:
+        return SamplePair(reason="SEPARATOR_CONFLICT")
+    return SamplePair(last=group[0], evidence=tuple(e for s in group for e in s.evidence))
 
 
 def run_update(
@@ -423,7 +563,7 @@ def _write_validated(
         config.path("output") or config.root / "outputs" / f"{template.stem}_UPDATED_{field}.xlsx"
     )
     output = output.resolve()
-    protected = [config.path(r) for r in ("calculator", *ROLES, *OPTIONAL_ROLES)]
+    protected = [config.path(r) for r in ("calculator", *ROLES, *OPTIONAL_ROLES, "manual_input")]
     if output.suffix.lower() != ".xlsx" or output in [p.resolve() for p in protected if p]:
         raise ServiceError("UNSAFE_OUTPUT: результат должен быть отдельным новым XLSX")
     for protected_dir in (
@@ -441,6 +581,7 @@ def _write_validated(
     log_path = output.with_suffix(".log")
     if any(p.exists() for p in (output, report_path, log_path)):
         raise ServiceError("OUTPUT_EXISTS: выберите новое имя результата")
+    result_rows_all = result.rows
     rows = tuple(r for r in result.rows if r.identity.fund.normalized_field == field)
     result.rows = rows
     result.report["selected_field"] = field
@@ -463,10 +604,23 @@ def _write_validated(
     tmp.unlink()
     created: list[OwnedFile] = []
     try:
-        write(template, tmp, rows, day, field, int(config.extra.get("top_n", 5)), config.criteria)
+        write(
+            template,
+            tmp,
+            rows,
+            day,
+            field,
+            int(config.extra.get("top_n", 5)),
+            config.criteria,
+            manual_input=config.path("manual_input"),
+            all_rows=tuple(result_rows_all),
+        )
         if progress:
             progress(ProgressUpdate(96, "Проверка перед публикацией новой копии"))
         result.report["output_structure"] = inspect_template(tmp)
+        for p, before in result.report.get("operator_manifest", {}).items():
+            if fingerprint(Path(p)) != before:
+                raise ServiceError("MANUAL_SOURCE_CHANGED")
         result.report["changed_ooxml_parts"] = changed_parts(template, tmp)
         for role, before in result.report["source_manifest"].items():
             p = config.path(role)

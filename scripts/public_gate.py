@@ -16,7 +16,7 @@ from zipfile import ZipFile
 from scripts import verify_handoff as policy
 
 TEMPLATE = "templates/Water_Sample_Ranking_Calculator.xlsx"
-TEMPLATE_SHA = "9f067b9a891640734c8f830fccddc35af5250735d875a83f05967de2cde4fc34"
+TEMPLATE_SHA = "b6e54a801bd70a2ef4184e2f0ac77d56a214dc801592f00f178b43ed3cb84f66"
 PRIVATE_DOCUMENTS = {
     "SPEC.md",
     "OPEN_QUESTIONS.md",
@@ -43,8 +43,8 @@ def public_document(name: str) -> bytes:
         "заказчику ведутся отдельно и не публикуются. Эта публичная копия содержит "
         "только технический прототип и синтетические проверки.\n\n"
         "TECHNICAL PREVIEW — НЕ УТВЕРЖДЁННЫЙ РЕЙТИНГ. "
-        "Баллы, ранги и TOP ожидают утверждения методики; UNKNOWN сохраняется. "
-        "№7–9 — наблюдения и кандидаты. Windows UX и native Excel требуют отдельной "
+        "Предварительная сумма без перенормировки; UNKNOWN сохраняется. "
+        "№6 ожидает правило, №9 отложен. Windows UX и native Excel требуют отдельной "
         "человеческой приёмки; CI не заменяет её. См. RELEASE_PROCESS.md и ACCEPTANCE.md.\n"
     ).encode()
 
@@ -67,7 +67,10 @@ def check_name(name: str) -> None:
 
 def check_template(data: bytes) -> None:
     policy.scan_xlsx(data)
-    if policy.sha(data) != TEMPLATE_SHA:
+    if policy.sha(data) not in {
+        TEMPLATE_SHA,
+        "9f067b9a891640734c8f830fccddc35af5250735d875a83f05967de2cde4fc34",
+    }:
         raise policy.HandoffError("PUBLIC_TEMPLATE_UNREVIEWED_BYTES")
     with ZipFile(io.BytesIO(data)) as archive:
         book = ET.fromstring(archive.read("xl/workbook.xml"))
@@ -109,7 +112,15 @@ def check_source(name: str, data: bytes, names: set[str]) -> None:
     if "SENSITIVE_" + "PRODUCTION_SENTINEL" in text:
         raise policy.HandoffError("PUBLIC_LEAK_CANARY")
     if name.startswith("docs/") and Path(name).name in PRIVATE_DOCUMENTS:
-        if data != public_document(Path(name).name):
+        current = public_document(Path(name).name)
+        legacy = current.replace(
+            "Предварительная сумма без перенормировки; UNKNOWN сохраняется. ".encode(),
+            "Баллы, ранги и TOP ожидают утверждения методики; UNKNOWN сохраняется. ".encode(),
+        ).replace(
+            "№6 ожидает правило, №9 отложен. Windows UX и native Excel требуют отдельной ".encode(),
+            "№7–9 — наблюдения и кандидаты. Windows UX и native Excel требуют отдельной ".encode(),
+        )
+        if data not in {current, legacy}:
             raise policy.HandoffError("PUBLIC_PRIVATE_DOCUMENT")
     if name.lower().endswith((".xlsx", ".xlsm", ".zip", ".tar", ".gz", ".xz")):
         raise policy.HandoffError("PUBLIC_UNREVIEWED_ARCHIVE")

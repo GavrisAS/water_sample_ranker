@@ -358,6 +358,8 @@ def attach_evidence(
     plan: OptionalInputs,
     geo: OptionalInputs,
     as_of: date,
+    *,
+    archive_neighbors: bool = True,
 ) -> tuple[RankedWell, ...]:
     # Index once; do not scan the large monitoring history for every target.
     index: dict[tuple[str, str | None], list[ParameterObservation]] = defaultdict(list)
@@ -375,7 +377,7 @@ def attach_evidence(
                     as_of,
                 ),
                 event_view(r.identity, histories, plan, as_of),
-                neighbor_view(r, rows, histories, geo, as_of),
+                *((neighbor_view(r, rows, histories, geo, as_of),) if archive_neighbors else ()),
             ),
         )
         for r in rows

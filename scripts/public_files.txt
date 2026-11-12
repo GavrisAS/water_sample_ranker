@@ -28,6 +28,7 @@ docs/STAGE_A1_REPORT.md
 docs/STAGE_B1_REPORT.md
 docs/STAGE_B_BASELINE.md
 docs/STAGE_B_REPORT.md
+docs/STAGE_C_REPORT.md
 docs/THIRD_PARTY_LICENSES.json
 docs/THIRD_PARTY_NOTICES.txt
 docs/UX_PARITY_GDIS.md
@@ -54,6 +55,7 @@ scripts/private_discrepancies.py
 scripts/public_files.txt
 scripts/public_gate.py
 scripts/publish_release.py
+scripts/qualify_stage_c.py
 scripts/release_assets.py
 scripts/run_checks.py
 scripts/verify_candidate.py
@@ -78,6 +80,8 @@ src/water_sample_ranker/domain/scoring.py
 src/water_sample_ranker/excel/__init__.py
 src/water_sample_ranker/excel/compatibility.py
 src/water_sample_ranker/excel/layout.py
+src/water_sample_ranker/excel/manual.py
+src/water_sample_ranker/excel/stage_c.py
 src/water_sample_ranker/excel/template_adapter.py
 src/water_sample_ranker/excel/writer.py
 src/water_sample_ranker/gui/__init__.py
@@ -132,5 +136,6 @@ tests/test_public_privacy.py
 tests/test_release_contract.py
 tests/test_stage_b_evidence.py
 tests/test_stage_b_operations.py
+tests/test_stage_c.py
 tests/test_water_rules.py
 uv.lock

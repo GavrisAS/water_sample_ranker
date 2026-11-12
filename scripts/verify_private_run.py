@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 
 from tests.formula_subset import Evaluator
 from water_sample_ranker.config import load_config
+from water_sample_ranker.domain.scoring import confirmed_score
 from water_sample_ranker.excel.layout import DATA_HEADERS
 from water_sample_ranker.service import run_update, run_validate
 from water_sample_ranker.source_manifest import fingerprint
@@ -31,7 +32,7 @@ def main() -> None:
     evidence = {
         "calculation_date": args.as_of.isoformat(),
         "fields": {},
-        "rating_methodology": "PENDING",
+        "rating_methodology": "PROVISIONAL",
     }
     for field in result.report["available_fields"]:
         config.paths["output"] = str(target / f"Water_UPDATED_{field}.xlsx")
@@ -39,6 +40,7 @@ def main() -> None:
         assert out.output is not None
         book = load_workbook(out.output, data_only=False)
         ev = Evaluator(book)
+        ev.depth = 1  # Неизменяемая книга: общий кэш независимой проверки.
         headers = {c.value: c.column for c in book["Данные"][6]}
         assert tuple(headers)[: len(DATA_HEADERS)] == DATA_HEADERS
         assert len(out.rows) == book["Данные"].max_row - 6
@@ -50,11 +52,17 @@ def main() -> None:
                     == criterion.state.value
                 )
             excelrow = index - 3
-            assert ev.cell("Рейтинг", f"A{excelrow}") == ""
-            assert ev.cell("Рейтинг", f"E{excelrow}") == ""
-            assert ev.cell("Рейтинг", f"B{excelrow}") == row.identity.display
+            assert abs(ev.cell("Расчет", f"J{excelrow}") - confirmed_score(row.criteria)) < 1e-11
             calculated = ev.cell("Расчет", f"I{excelrow}")
             assert row.coverage is not None and abs(calculated - row.coverage) < 1e-9
+        ordered = sorted(out.rows, key=lambda r: -confirmed_score(r.criteria))
+        for n, row in enumerate(ordered, 4):
+            score = confirmed_score(row.criteria)
+            assert ev.cell("Рейтинг", f"B{n}") == row.identity.display
+            assert abs(ev.cell("Рейтинг", f"E{n}") - score) < 1e-11
+            assert ev.cell("Рейтинг", f"A{n}") == 1 + sum(
+                confirmed_score(r.criteria) > score for r in out.rows
+            )
         for name, before in out.report["source_manifest"].items():
             source_path = config.path(name)
             assert source_path is not None
@@ -65,7 +73,7 @@ def main() -> None:
             "output": out.report["output"],
             "ooxml_parts": out.report["changed_ooxml_parts"],
             "independent_python_formula_subset": "PASS",
-            "native_excel": "PENDING",
+            "native_excel": "NOT_RUN",
         }
         book.close()
         print(

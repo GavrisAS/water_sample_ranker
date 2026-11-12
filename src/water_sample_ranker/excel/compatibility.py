@@ -4,8 +4,13 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from zipfile import ZipFile
 
-from water_sample_ranker.criteria.rules import WEIGHTS
-from water_sample_ranker.excel.layout import CAPACITY, DATA_HEADERS, DATA_HEADERS_V2, SHEETS
+from water_sample_ranker.excel.layout import (
+    ALL_DATA_HEADERS,
+    CAPACITY,
+    DATA_HEADERS,
+    DATA_HEADERS_V2,
+    SHEETS,
+)
 from water_sample_ranker.readers.ooxml import Book, q
 
 
@@ -28,13 +33,13 @@ def inspect_template(path: Path) -> dict[str, object]:
                     columns = t.find(q("tableColumns"))
                     assert columns is not None
                     headers = tuple(c.get("name") for c in columns)
-                    if headers not in {DATA_HEADERS, DATA_HEADERS_V2}:
+                    if headers not in {DATA_HEADERS, DATA_HEADERS_V2, ALL_DATA_HEADERS}:
                         raise ValueError("TEMPLATE_DATA_SCHEMA_INVALID")
-        if set(tables) != {"tblData", "tblCriteria", "tblCalculation", "tblRating"}:
+        if set(tables) != {"tblData", "tblCriteria", "tblCalculation", "tblRating", "tblOperator"}:
             raise ValueError("TEMPLATE_TABLES_INVALID")
         if (
-            tables["tblCalculation"] != f"A3:N{CAPACITY + 3}"
-            or tables["tblRating"] != f"A3:I{CAPACITY + 3}"
+            tables["tblCalculation"] != f"A3:AA{CAPACITY + 3}"
+            or tables["tblRating"] != f"A3:AR{CAPACITY + 3}"
         ):
             raise ValueError("TEMPLATE_CAPACITY_INVALID")
         data_header = next(cells for row, cells in b.rows("Данные", max_row=6) if row == 6)
@@ -46,17 +51,31 @@ def inspect_template(path: Path) -> dict[str, object]:
         if actual_headers != headers:
             raise ValueError("TEMPLATE_VISIBLE_HEADERS_INVALID")
         settings = {row: cells for row, cells in b.rows("Настройки", max_row=29)}
-        if tuple(settings[row]["D"].value for row in range(21, 30)) != WEIGHTS:
-            raise ValueError("TEMPLATE_WEIGHTS_INVALID")
+        for row in range(21, 30):
+            value = settings[row]["D"].value
+            if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+                raise ValueError("TEMPLATE_WEIGHTS_INVALID")
+        # Проверять расчётный контракт, разрешая только документированный ввод.
         for sheet, columns in (("Расчет", ("J", "K")), ("Рейтинг", ("A", "E"))):
-            x = ET.fromstring(b.zip.read(b.sheets[sheet]))
-            cells = {c.get("r"): c for c in x.iter(q("c"))}
+            xml = ET.fromstring(b.zip.read(b.sheets[sheet]))
+            cells = {c.get("r"): c for c in xml.iter(q("c"))}
             for row in range(4, CAPACITY + 4):
                 for col in columns:
-                    c = cells.get(f"{col}{row}")
-                    f = c.find(q("f")) if c is not None else None
-                    if f is None or f.text != '""':
-                        raise ValueError("UNAPPROVED_SCORE_OR_RANK")
+                    cell = cells.get(f"{col}{row}")
+                    formula = cell.find(q("f")) if cell is not None else None
+                    if formula is None or not formula.text:
+                        raise ValueError("PRELIMINARY_FORMULA_MISSING")
+                    expected = (
+                        (
+                            f'IF(A{row}="","",ROUND(SUM(O{row}:W{row}),12))'
+                            if col == "J"
+                            else f'IF(A{row}="","",1+COUNTIF($J$4:$J${CAPACITY + 3},">"&J{row}))'
+                        )
+                        if sheet == "Расчет"
+                        else None
+                    )
+                    if expected is not None and formula.text != expected:
+                        raise ValueError("PRELIMINARY_FORMULA_CONFLICT")
         formulas = 0
         for name in b.sheets.values():
             x = ET.fromstring(b.zip.read(name))
@@ -76,9 +95,13 @@ def inspect_template(path: Path) -> dict[str, object]:
         "tables": tables,
         "formulas": formulas,
         "capacity": CAPACITY,
-        "data_schema": "water-evidence-v2" if headers == DATA_HEADERS_V2 else "water-data-v1",
+        "data_schema": "water-stage-c-v3"
+        if headers == ALL_DATA_HEADERS
+        else "water-evidence-v2"
+        if headers == DATA_HEADERS_V2
+        else "water-data-v1",
         "visual": "VISUAL_REVIEW_PENDING",
-        "native_recalc": "PENDING",
+        "native_recalc": "NOT_RUN",
     }
 
 

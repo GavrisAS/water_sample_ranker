@@ -1,12 +1,15 @@
 """Literal water criteria. Truth is separate from unapproved numerical scoring."""
 
+import calendar
 import re
+from dataclasses import replace
 from datetime import date
 
 from water_sample_ranker.config import CriteriaConfig
 from water_sample_ranker.domain.measurements import valid_measurement
 from water_sample_ranker.domain.models import (
     CriterionResult,
+    DatePrecision,
     Sample,
     SamplePair,
     TargetIdentity,
@@ -22,8 +25,8 @@ NAMES = (
     "Спорный генезис",
     "Дебит воды и хлор",
     "Увеличение штуцера",
-    "Запланировано или проведено ГТМ",
-    "Влияние окружения",
+    "Отбор пробы после ГТМ",
+    "Отложен заказчиком",
 )
 
 
@@ -47,6 +50,12 @@ def result(
         number,
         WEIGHTS[number - 1],
         state,
+        normalized_score=1.0 if state == Truth.TRUE else 0.0 if state == Truth.FALSE else None,
+        weighted_contribution=WEIGHTS[number - 1]
+        if state == Truth.TRUE
+        else 0.0
+        if state == Truth.FALSE
+        else None,
         raw_value=raw if isinstance(raw, (str, int, float, bool)) else None,
         source_date=pair.last.date if pair.last else None,
         source_locations=tuple(dict.fromkeys(e.location for e in pair.evidence)),
@@ -102,24 +111,29 @@ def technical(
     confirmed_scope: tuple[str, str, str] | None = None,
 ) -> CriterionResult:
     s = pair.last
-    if not s or s.conclusion is None:
+    if (
+        (field, well) == ("береговое", "23")
+        and confirmed_scope == ("береговое", "23", "ПК1")
+        and (s is None or s.plast == "ПК1")
+    ):
+        return result(
+            4,
+            Truth.NOT_APPLICABLE,
+            pair,
+            "CONFIRMED_SCOPED_EXCEPTION_23",
+            s.conclusion if s else None,
+        )
+    if not s or s.conclusion is None or not s.conclusion.strip():
         return result(
             4, Truth.UNKNOWN, pair, pair.reason if pair.conflict else "CONCLUSION_UNAVAILABLE"
         )
-    if well == "23":
-        if confirmed_scope == (field, well, s.plast):
-            return result(
-                4, Truth.NOT_APPLICABLE, pair, "CONFIRMED_SCOPED_EXCEPTION_23", s.conclusion
-            )
-        if field == "береговое":
-            return result(4, Truth.UNKNOWN, pair, "EXCEPTION_23_SCOPE_UNCONFIRMED", s.conclusion)
     text = re.sub(r"\s+", "", s.conclusion.upper())
+    if re.match(r"^Т(?:\+|\?|$)", text):
+        return result(4, Truth.TRUE, pair, "FIRST_COMPONENT_T", s.conclusion)
     # Exact components, not substring matching of arbitrary prose.
     if re.fullmatch(r"[КПТ](?:\+[КПТ])*\??", text) is None:
         return result(4, Truth.UNKNOWN, pair, "UNCONFIRMED_GENESIS_NOTATION", s.conclusion)
     components = text.rstrip("?").split("+")
-    if components[:2] == ["К", "Т"] and len(components) > 2:
-        return result(4, Truth.UNKNOWN, pair, "COMPOSITE_K_T_PENDING", s.conclusion)
     yes = components[0] == "Т" or components == ["К", "Т"]
     return result(
         4, Truth.TRUE if yes else Truth.FALSE, pair, "FIRST_COMPONENT_T_OR_EXACT_K_T", s.conclusion
@@ -127,7 +141,7 @@ def technical(
 
 
 def disputed(pair: SamplePair) -> CriterionResult:
-    if not pair.last or pair.last.conclusion is None:
+    if not pair.last or not pair.last.conclusion or not pair.last.conclusion.strip():
         return result(5, Truth.UNKNOWN, pair, "CONCLUSION_UNAVAILABLE")
     text = pair.last.conclusion
     return result(
@@ -139,30 +153,54 @@ def water_rate(pair: SamplePair, config: CriteriaConfig | None = None) -> Criter
     cfg = config or CriteriaConfig()
     s = pair.last
     if s and invalid(s, ("water", "chlorine")):
-        return result(6, Truth.UNKNOWN, pair, "INVALID_MEASUREMENT")
+        return result(6, Truth.UNKNOWN, pair, "GATE_UNKNOWN_INVALID_MEASUREMENT")
     if not s or s.water_l_day is None or s.chlorine is None:
-        return result(6, Truth.UNKNOWN, pair, "LATEST_WATER_OR_CL_UNAVAILABLE")
+        return result(6, Truth.UNKNOWN, pair, "GATE_UNKNOWN_LATEST_WATER_OR_CL_UNAVAILABLE")
+    passed = s.water_l_day > cfg.water_l_day and s.chlorine > cfg.cl_low
     return result(
         6,
-        Truth.TRUE if s.water_l_day > cfg.water_l_day and s.chlorine > cfg.cl_low else Truth.FALSE,
+        Truth.PENDING_CUSTOMER_RULE if passed else Truth.FALSE,
         pair,
-        "ABSOLUTE_THRESHOLD_NO_TIME_DERIVATIVE; " + cfg.policy_status,
+        "GATE_PASS_SECOND_STEP_PENDING" if passed else "GATE_FAIL",
         s.water_l_day,
     )
 
 
-def duration(pair: SamplePair, as_of: date) -> tuple[CriterionResult, int | None, int | None]:
-    if not pair.last or not pair.last.date:
-        return (
-            result(1, Truth.UNKNOWN, pair, "NO_CONFIRMED_LAST_SAMPLE; NO_MAXIMUM_ASSUMED"),
-            None,
-            None,
-        )
-    last = pair.last.date.date()
-    days = (as_of - last).days
-    months = (as_of.year - last.year) * 12 + as_of.month - last.month - (as_of.day < last.day)
+def full_months(start: date, end: date) -> int:
+    """Полные месяцы с календарным ограничением дня последним днём месяца."""
     return (
-        result(1, Truth.UNKNOWN, pair, "DURATION_OBSERVED; SCORE_FUNCTION_PENDING", days),
+        (end.year - start.year) * 12
+        + end.month
+        - start.month
+        - (end.day < min(start.day, calendar.monthrange(end.year, end.month)[1]))
+    )
+
+
+def duration(
+    pair: SamplePair, as_of: date, identity: TargetIdentity | None = None
+) -> tuple[CriterionResult, int | None, int | None]:
+    last = pair.last.date.date() if pair.last and pair.last.date else None
+    reason = "CALENDAR_MONTHS_CLAMPED_PROVISIONAL_LAST_SAMPLE"
+    if last is None:
+        if pair.conflict or (identity is not None and identity.status != "RESOLVED"):
+            return result(1, Truth.UNKNOWN, pair, "STAGE_OR_SAMPLE_CONFLICT"), None, None
+        stage = identity.stage if identity else None
+        if stage is None or stage.started_at.precision != DatePrecision.DAY:
+            return (
+                result(1, Truth.UNKNOWN, pair, "CURRENT_STAGE_START_UNAVAILABLE_OR_PARTIAL"),
+                None,
+                None,
+            )
+        d = stage.started_at
+        last = date(d.year, d.month or 1, d.day or 1)
+        reason = "CALENDAR_MONTHS_CLAMPED_PROVISIONAL_CURRENT_STAGE_START"
+    if last > as_of:
+        return result(1, Truth.UNKNOWN, pair, "FUTURE_REFERENCE_DATE"), None, None
+    days, months = (as_of - last).days, full_months(last, as_of)
+    score = min(months, 12) / 12
+    c = result(1, Truth.TRUE if score > 0 else Truth.FALSE, pair, reason, months)
+    return (
+        replace(c, normalized_score=score, weighted_contribution=score * WEIGHTS[0]),
         days,
         months,
     )
@@ -171,7 +209,7 @@ def duration(pair: SamplePair, as_of: date) -> tuple[CriterionResult, int | None
 def separator(pair: SamplePair, plast: str | None, config: CriteriaConfig | None = None) -> str:
     cfg = config or CriteriaConfig()
     if plast is None:
-        return "UNKNOWN"
+        return "нет данных"
     if plast != "ПК1":
         return "NOT_APPLICABLE"
     if (
@@ -179,7 +217,7 @@ def separator(pair: SamplePair, plast: str | None, config: CriteriaConfig | None
         or invalid(pair.last, ("water",))
         or not valid_measurement(pair.last.water_l_day)
     ):
-        return "UNKNOWN"
+        return "нет данных"
     assert pair.last.water_l_day is not None
     return "сепаратор МЗС" if pair.last.water_l_day / 1000 >= cfg.separator_m3_day else "Надым"
 
@@ -191,16 +229,23 @@ def evaluate(
     as_of: date,
     config: CriteriaConfig | None = None,
 ) -> tuple[tuple[CriterionResult, ...], int | None, int | None]:
-    first, days, months = duration(pair, as_of)
+    first, days, months = duration(pair, as_of, identity)
     items = (
         first,
         chlorine(pair, 2, config),
         chlorine(pair, 3, config),
-        technical(slide, well=identity.display, field=identity.fund.normalized_field),
+        technical(
+            slide,
+            well=identity.display,
+            field=identity.fund.normalized_field,
+            confirmed_scope=(identity.fund.normalized_field, identity.display, identity.plast)
+            if identity.status == "RESOLVED" and identity.plast
+            else None,
+        ),
         disputed(slide),
         water_rate(pair, config),
-        result(7, Truth.UNKNOWN, SamplePair(), "CHOKE_WINDOW_AND_SOURCE_SEMANTICS_PENDING"),
-        result(8, Truth.UNKNOWN, SamplePair(), "GTM_PLAN_AND_EVENT_WINDOW_UNAVAILABLE"),
-        result(9, Truth.UNKNOWN, pair, "MAPS_NEIGHBOR_RULE_UNAVAILABLE"),
+        result(7, Truth.UNKNOWN, SamplePair(), "CONFIRMED_DIAMETER_INCREASE_AFTER_SAMPLE_REQUIRED"),
+        result(8, Truth.UNKNOWN, SamplePair(), "MANUAL_GTM_UNSET"),
+        result(9, Truth.DISABLED, SamplePair(), "DEFERRED_BY_CUSTOMER_NO_WEIGHT_REDISTRIBUTION"),
     )
     return items, days, months

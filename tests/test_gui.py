@@ -71,7 +71,7 @@ def test_criteria_dialog_exposes_units_and_pending_method(
     dialog = CriteriaDialog(AppConfig(tmp_path))
     assert dialog.isModal()
     pending = dialog.table.item(0, 3)
-    assert pending is not None and pending.text() == "PENDING"
+    assert pending is not None and pending.text() == "не более 1"
     assert not pending.flags() & Qt.ItemFlag.ItemIsEditable
     value = dialog.table.item(10, 3)
     assert value is not None and value.flags() & Qt.ItemFlag.ItemIsEditable
@@ -115,7 +115,8 @@ def test_all_fields_optional_inputs_and_worker_cancel(app: QApplication, synthet
     from water_sample_ranker.progress import ProgressUpdate
 
     window = LoaderWindow(synthetic)
-    assert "gtm_plan" in window._fields and "geodata" in window._fields
+    assert "gtm_plan" not in window._fields and "geodata" not in window._fields
+    assert "well_history" in window._fields and "manual_input" in window._fields
     assert not window._cancel_button.isEnabled()
     window._validate()
     wait_thread(app, window)

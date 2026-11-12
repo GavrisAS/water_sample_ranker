@@ -12,7 +12,7 @@ from water_sample_ranker.service import ServiceError, run_update, run_update_all
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Калькулятор отбора проб воды — этап B; рейтинг PENDING"
+        description="Калькулятор отбора проб воды — этап C; предварительный рейтинг"
     )
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -22,8 +22,11 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--config", type=Path)
         p.add_argument("--as-of", type=date.fromisoformat)
         p.add_argument("--json", action="store_true")
-        for role in ("calculator", *ROLES, *OPTIONAL_ROLES, "output"):
-            p.add_argument("--" + role.replace("_", "-"))
+        for role in ("calculator", *ROLES, *OPTIONAL_ROLES, "manual_input", "output"):
+            p.add_argument(
+                "--" + role.replace("_", "-"),
+                help=argparse.SUPPRESS if role in OPTIONAL_ROLES else None,
+            )
         if command == "update":
             p.add_argument("--field", required=True)
         if command == "update-all":
@@ -31,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         config = load_config(args.project, args.config)
-        for role in ("calculator", *ROLES, *OPTIONAL_ROLES, "output"):
+        for role in ("calculator", *ROLES, *OPTIONAL_ROLES, "manual_input", "output"):
             if getattr(args, role):
                 config.paths[role] = getattr(args, role)
         if args.command == "update-all":

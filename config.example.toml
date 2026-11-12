@@ -6,9 +6,8 @@ top_n = 5
 [paths]
 calculator = "templates/Water_Sample_Ranking_Calculator.xlsx"
 output = ""
-# Необязательный строгий JSON v1; пусто = SOURCE_UNAVAILABLE/UNKNOWN.
-gtm_plan = ""
-geodata = ""
+# Предыдущая книга или каталог пакета для сохранения ручных отметок:
+manual_input = ""
 
 [criteria]
 cl_low = 2000.0
