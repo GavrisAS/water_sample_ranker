@@ -793,3 +793,34 @@ def test_staged_files_are_flushed_with_windows_compatible_write_handles(source, 
     )
     assert flushed_files == 4
     assert v.verify(manifest)["business_correctness"] == "UNKNOWN"
+
+
+def test_gate_timeout_stops_descendant_and_releases_inherited_log(tmp_path):
+    import time
+
+    heartbeat = tmp_path / "heartbeat.txt"
+    child = tmp_path / "synthetic-child.py"
+    child.write_text(
+        "import sys,time\nfrom pathlib import Path\n"
+        "p=Path(sys.argv[1])\n"
+        "while True:\n"
+        '    with p.open("a") as f: f.write("tick\\n")\n'
+        '    print("SYNTHETIC_HEARTBEAT",flush=True)\n'
+        "    time.sleep(0.05)\n"
+    )
+    parent = tmp_path / "synthetic-parent.py"
+    parent.write_text(
+        "import subprocess,sys,time\n"
+        "subprocess.Popen([sys.executable,sys.argv[1],sys.argv[2]])\n"
+        "time.sleep(30)\n"
+    )
+    gate, log = evidence.run_gate(
+        [sys.executable, str(parent), str(child), str(heartbeat)], tmp_path, 2, "tree-timeout"
+    )
+    assert gate["status"] == "FAIL" and gate["returncode"] is None
+    assert heartbeat.is_file() and b"SYNTHETIC_HEARTBEAT" in log
+    size = heartbeat.stat().st_size
+    time.sleep(0.2)
+    assert heartbeat.stat().st_size == size
+    # На Windows удаление открытого файла запрещено: доказывает закрытие потомка.
+    heartbeat.unlink()

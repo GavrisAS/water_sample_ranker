@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -116,6 +117,27 @@ def clean_log(text: str, root: Path, temporary: Path | None = None) -> str:
     return text
 
 
+def stop_process_tree(process: subprocess.Popen) -> None:
+    """Остановить только собственную группу/дерево, затем закрыть дескрипторы журнала."""
+    if os.name == "nt":
+        # uv запускает pytest дочерним процессом; kill одного uv оставляет файл открытым.
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=20,
+        )
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if process.poll() is None:
+        process.kill()
+    process.wait(timeout=20)
+
+
 def run_gate(
     command: list[str], root: Path, timeout: float, label: str
 ) -> tuple[dict[str, Any], bytes]:
@@ -135,15 +157,22 @@ def run_gate(
         output = Path(tmp) / "output.txt"
         try:
             with output.open("wb") as stream:
-                process = subprocess.run(
+                with subprocess.Popen(
                     command,
                     cwd=root,
                     env=env,
                     stdout=stream,
                     stderr=subprocess.STDOUT,
-                    timeout=timeout,
-                    check=False,
-                )
+                    start_new_session=os.name != "nt",
+                    creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    if os.name == "nt"
+                    else 0,
+                ) as process:
+                    try:
+                        process.wait(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        stop_process_tree(process)
+                        raise
             code = process.returncode
             status = "PASS" if code == 0 else "FAIL"
         except subprocess.TimeoutExpired:

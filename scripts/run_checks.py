@@ -36,7 +36,10 @@ def main() -> None:
     }
     gates = {}
     for name, command in commands.items():
-        gate, log = run_gate(command, root, 600, name)
+        # Полный набор с Excel/golden и privacy-history на Windows длится >10 минут.
+        # Лимит остаётся конечным; таймаут никогда не является PASS.
+        timeout = 1800 if name == "pytest" else 600
+        gate, log = run_gate(command, root, timeout, name)
         print(log.decode(), end="", flush=True)
         gates[name] = gate["status"]
         if gate["status"] != "PASS":
